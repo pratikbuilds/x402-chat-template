@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 
-import { settleApprovedPayment } from "./settle-approved-payment";
+import { AmbiguousPaymentError, settleApprovedPayment } from "./settle-approved-payment";
 import {
   matchApprovedChallenge,
   parsePaymentRequiredHeader,
@@ -82,7 +82,7 @@ describe("settleApprovedPayment", () => {
     );
     const pay = mock(
       async () =>
-        new Response("ok", {
+        new Response('{"fact":"paid resource"}', {
           headers: {
             "PAYMENT-RESPONSE": encodeHeader({
               network: "solana:devnet",
@@ -97,11 +97,61 @@ describe("settleApprovedPayment", () => {
     await expect(
       settleApprovedPayment({ pay, probe, request }),
     ).resolves.toEqual({
+      paidBody: '{"fact":"paid resource"}',
       signature: "5SettlementSignature111111111111111111111111111",
     });
     expect(pay).toHaveBeenCalledTimes(1);
     expect(pay.mock.calls[0]?.[0]).toBe(request.resourceUrl);
     expect(pay.mock.calls[0]?.[1]).toBeInstanceOf(Response);
+  });
+
+  it("keeps a settlement signature when the paid HTTP retry is not ok", async () => {
+    const probe = mock(
+      async () =>
+        new Response(null, {
+          headers: {
+            "PAYMENT-REQUIRED": encodeHeader(matchingRequired),
+          },
+          status: 402,
+        }),
+    );
+    const pay = mock(
+      async () =>
+        new Response("facilitator timeout", {
+          headers: {
+            "PAYMENT-RESPONSE": encodeHeader({
+              network: "solana:devnet",
+              success: true,
+              transaction: "5SettlementSignature111111111111111111111111111",
+            }),
+          },
+          status: 503,
+        }),
+    );
+
+    await expect(
+      settleApprovedPayment({ pay, probe, request }),
+    ).resolves.toEqual({
+      paidBody: "facilitator timeout",
+      signature: "5SettlementSignature111111111111111111111111111",
+    });
+  });
+
+  it("does not allow a pay retry when a failed paid response has no signature", async () => {
+    const probe = mock(
+      async () =>
+        new Response(null, {
+          headers: {
+            "PAYMENT-REQUIRED": encodeHeader(matchingRequired),
+          },
+          status: 402,
+        }),
+    );
+    const pay = mock(async () => new Response("upstream failed", { status: 502 }));
+
+    await expect(
+      settleApprovedPayment({ pay, probe, request }),
+    ).rejects.toBeInstanceOf(AmbiguousPaymentError);
   });
 
   it("does not sign when the 402 amount does not match", async () => {

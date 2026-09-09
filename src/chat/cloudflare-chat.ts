@@ -2,6 +2,13 @@ import { useAgent } from "agents/react";
 import { useAgentChat } from "@cloudflare/ai-chat/react";
 import { useCallback } from "react";
 
+import { isAmbiguousPaymentError } from "@/payments/payment-errors";
+import {
+  loadPaymentAttempt,
+  parsePaymentAttemptRecord,
+  savePaymentAttempt,
+  type PaymentAttemptRecord,
+} from "@/payments/settlement-receipts";
 import { parseX402PaymentRequest } from "@/payments/x402-request";
 import { useOptionalWallet } from "@/wallet/wallet-provider";
 
@@ -29,8 +36,32 @@ export function useCloudflareChat({
   const wallet = useOptionalWallet();
   const canSettleOnThisPlatform = process.env.EXPO_OS === "android";
 
+  const lookupPaymentAttempt = useCallback(async (toolCallId: string) => {
+    const local = await loadPaymentAttempt(toolCallId);
+    if (local) {
+      return local;
+    }
+
+    try {
+      const remote = await agent.call("findX402Settlement", [toolCallId]);
+      const parsed = parseRemoteSettlement(remote);
+      if (parsed) {
+        await savePaymentAttempt(toolCallId, parsed);
+      }
+      return parsed;
+    } catch {
+      return null;
+    }
+  }, [agent]);
+
   const settlePayment = useCallback(
-    async ({ request }: { id: string; request: unknown }) => {
+    async ({
+      request,
+      toolCallId,
+    }: {
+      request: unknown;
+      toolCallId: string;
+    }) => {
       const parsed = parseX402PaymentRequest(request);
       if (!parsed) {
         throw new Error("Payment details could not be displayed safely.");
@@ -66,20 +97,35 @@ export function useCloudflareChat({
         }),
       });
 
-      return settleApprovedPayment({
-        pay: (resourceUrl) => client.fetch(resourceUrl, undefined, "x402"),
-        request: parsed,
-      });
+      try {
+        const result = await settleApprovedPayment({
+          pay: (resourceUrl) => client.fetch(resourceUrl, undefined, "x402"),
+          request: parsed,
+        });
+        await savePaymentAttempt(toolCallId, {
+          kind: "settled",
+          paidBody: result.paidBody,
+          signature: result.signature,
+        });
+        return result;
+      } catch (error) {
+        if (isAmbiguousPaymentError(error)) {
+          await savePaymentAttempt(toolCallId, { kind: "unknown" });
+        }
+        throw error;
+      }
     },
     [wallet],
   );
 
   const recordSettlement = useCallback(
     async ({
+      paidBody,
       request,
       signature,
       toolCallId,
     }: {
+      paidBody: string;
       request: unknown;
       signature: string;
       toolCallId: string;
@@ -91,6 +137,7 @@ export function useCloudflareChat({
 
       await agent.call("recordX402Settlement", [
         {
+          paidBody,
           request: parsed,
           signature,
           toolCallId,
@@ -107,6 +154,9 @@ export function useCloudflareChat({
       error: chat.error ?? chat.connectionError ?? agent.connectionError,
       isRecovering: chat.isRecovering,
       isStreaming: chat.isStreaming,
+      lookupPaymentAttempt: canSettleOnThisPlatform
+        ? lookupPaymentAttempt
+        : undefined,
       messages: chat.messages,
       sendMessage: chat.sendMessage,
       settlePayment: canSettleOnThisPlatform ? settlePayment : undefined,
@@ -114,5 +164,22 @@ export function useCloudflareChat({
       status: chat.status,
       stop: chat.stop,
     },
+  });
+}
+
+function parseRemoteSettlement(value: unknown): PaymentAttemptRecord | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  if (record.status !== "settled") {
+    return null;
+  }
+
+  return parsePaymentAttemptRecord({
+    kind: "settled",
+    paidBody: typeof record.paidBody === "string" ? record.paidBody : "",
+    signature: record.signature,
   });
 }

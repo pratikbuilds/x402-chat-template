@@ -41,7 +41,6 @@ describe("request_x402_payment", () => {
       approvalId: "approval-1",
       expiresAt: 301_000,
       request,
-      settlement: "not_submitted",
       status: "approved_for_client_signing",
     });
     expect(createApproval).toHaveBeenCalledWith(request, 301_000);
@@ -51,6 +50,7 @@ describe("request_x402_payment", () => {
     const paymentTool = createX402PaymentTool({
       createApproval: async () => ({ approvalId: "approval-2" }),
       findSettlement: async () => ({
+        paidBody: '{"fact":"hello"}',
         signature: "5HjgkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYz11111",
       }),
       now: () => 1_000,
@@ -68,8 +68,8 @@ describe("request_x402_payment", () => {
     ).resolves.toEqual({
       approvalId: "approval-2",
       expiresAt: 301_000,
+      paidBody: '{"fact":"hello"}',
       request,
-      settlement: "submitted",
       signature: "5HjgkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYz11111",
       status: "settled",
     });
@@ -124,6 +124,7 @@ describe("request_x402_payment", () => {
     ).toBe(false);
     expect(
       X402SettlementReportSchema.safeParse({
+        paidBody: '{"fact":"hello"}',
         request,
         signature: "5HjgkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYz11111",
         toolCallId: "tool-call-1",
@@ -133,6 +134,7 @@ describe("request_x402_payment", () => {
       X402SettlementReportSchema.safeParse({
         request,
         signature: "5HjgkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYz11111",
+        toolCallId: "tool-call-1",
       }).success,
     ).toBe(false);
     expect(

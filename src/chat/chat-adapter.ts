@@ -3,6 +3,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { createStreamingStore, type StreamingStore } from "../components/chat/streaming-store";
 import type { ChatMessage } from "../components/chat/types";
+import { isAmbiguousPaymentError } from "../payments/payment-errors";
+import type { SettleApprovedPaymentResult } from "../payments/settle-approved-payment";
+import type { PaymentAttemptRecord } from "../payments/settlement-receipts";
 
 export type ChatStatus = "ready" | "submitted" | "streaming" | "error";
 
@@ -11,14 +14,19 @@ export type ChatTransport = {
   error: unknown;
   isRecovering: boolean;
   isStreaming: boolean;
+  lookupPaymentAttempt?: (
+    toolCallId: string,
+  ) => Promise<PaymentAttemptRecord | null>;
   messages: UIMessage[];
   sendMessage: (message: { text: string }) => void;
   settlePayment?: (input: {
     id: string;
     request: unknown;
-  }) => Promise<{ signature: string }>;
+    toolCallId: string;
+  }) => Promise<SettleApprovedPaymentResult>;
   recordSettlement?: (input: {
     id: string;
+    paidBody: string;
     request: unknown;
     signature: string;
     toolCallId: string;
@@ -42,7 +50,8 @@ export type PaymentSettlement =
   | { status: "idle" }
   | { status: "paying"; approvalId: string }
   | { status: "settled"; approvalId: string; signature: string }
-  | { status: "failed"; approvalId: string; message: string };
+  | { status: "failed"; approvalId: string; message: string }
+  | { status: "blocked"; approvalId: string; message: string };
 
 export type ChatAdapter = {
   approvePayment: (id: string, approved: boolean) => void;
@@ -130,7 +139,7 @@ export function useChatAdapter({
   const [paymentSettlement, setPaymentSettlement] = useState<PaymentSettlement>(
     { status: "idle" },
   );
-  const receipts = useRef(new Map<string, string>());
+  const attempts = useRef(new Map<string, PaymentAttemptRecord>());
   const payingApprovalId = useRef<string | null>(null);
   const streamingStore = useMemo(() => createStreamingStore(), []);
   const previousStreamingText = useRef("");
@@ -189,7 +198,8 @@ export function useChatAdapter({
         return;
       }
 
-      if (!transport.settlePayment) {
+      const settlePayment = transport.settlePayment;
+      if (!settlePayment) {
         transport.addToolApprovalResponse({ approved: true, id });
         return;
       }
@@ -210,11 +220,14 @@ export function useChatAdapter({
         return;
       }
 
-      const finishAfterRecord = async (signature: string) => {
-        receipts.current.set(id, signature);
+      const finishAfterRecord = async (receipt: {
+        paidBody: string;
+        signature: string;
+      }) => {
+        attempts.current.set(id, { kind: "settled", ...receipt });
         setPaymentSettlement({
           approvalId: id,
-          signature,
+          signature: receipt.signature,
           status: "settled",
         });
 
@@ -222,8 +235,9 @@ export function useChatAdapter({
           try {
             await transport.recordSettlement({
               id,
+              paidBody: receipt.paidBody,
               request: approval.input,
-              signature,
+              signature: receipt.signature,
               toolCallId: approval.toolCallId,
             });
           } catch {
@@ -242,27 +256,69 @@ export function useChatAdapter({
         transport.addToolApprovalResponse({ approved: true, id });
       };
 
-      const cachedSignature = receipts.current.get(id);
-      if (cachedSignature) {
-        payingApprovalId.current = id;
-        void finishAfterRecord(cachedSignature);
-        return;
-      }
+      const resolveAttempt = async () => {
+        const cached = attempts.current.get(id);
+        if (cached) {
+          return cached;
+        }
+
+        const stored = await transport.lookupPaymentAttempt?.(
+          approval.toolCallId,
+        );
+        if (stored) {
+          attempts.current.set(id, stored);
+        }
+        return stored ?? null;
+      };
 
       payingApprovalId.current = id;
       setPaymentSettlement({ approvalId: id, status: "paying" });
 
-      void transport
-        .settlePayment({ id, request: approval.input })
-        .then((result) => finishAfterRecord(result.signature))
-        .catch((error: unknown) => {
+      void (async () => {
+        const existing = await resolveAttempt();
+        if (existing?.kind === "settled") {
+          await finishAfterRecord(existing);
+          return;
+        }
+        if (existing?.kind === "unknown") {
           payingApprovalId.current = null;
+          setPaymentSettlement({
+            approvalId: id,
+            message:
+              "Payment may already have been sent. Do not approve again.",
+            status: "blocked",
+          });
+          return;
+        }
+
+        try {
+          const result = await settlePayment({
+            id,
+            request: approval.input,
+            toolCallId: approval.toolCallId,
+          });
+          await finishAfterRecord(result);
+        } catch (error: unknown) {
+          payingApprovalId.current = null;
+          if (isAmbiguousPaymentError(error)) {
+            attempts.current.set(id, { kind: "unknown" });
+            setPaymentSettlement({
+              approvalId: id,
+              message:
+                toChatError(error)?.message ??
+                "Payment may already have been sent. Do not approve again.",
+              status: "blocked",
+            });
+            return;
+          }
+
           setPaymentSettlement({
             approvalId: id,
             message: toChatError(error)?.message ?? "Payment failed.",
             status: "failed",
           });
-        });
+        }
+      })();
     },
     [transport],
   );

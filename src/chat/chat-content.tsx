@@ -124,9 +124,10 @@ function PaymentApprovalCard({
   const details = parseX402PaymentRequest(approval.input);
   const isPaying =
     settlement.status === "paying" && settlement.approvalId === approval.id;
+  const isBlocked =
+    settlement.status === "blocked" && settlement.approvalId === approval.id;
   const failureMessage =
-    canPay &&
-    settlement.status === "failed" &&
+    (settlement.status === "blocked" || settlement.status === "failed") &&
     settlement.approvalId === approval.id
       ? settlement.message
       : null;
@@ -176,7 +177,7 @@ function PaymentApprovalCard({
         >
           <Text className="font-semibold text-foreground">Decline</Text>
         </Pressable>
-        {canPay ? (
+        {canPay && !isBlocked ? (
           <Pressable
             className="flex-1 items-center rounded-xl bg-foreground px-3 py-3 active:opacity-80"
             disabled={isPaying}
@@ -186,7 +187,7 @@ function PaymentApprovalCard({
               {isPaying ? "Paying…" : "Approve request"}
             </Text>
           </Pressable>
-        ) : canSettlePayment ? (
+        ) : canSettlePayment && !isBlocked ? (
           <Link href="/(settings)/wallet-payments" asChild>
             <Pressable className="flex-1 items-center rounded-xl bg-foreground px-3 py-3 active:opacity-80">
               <Text className="font-semibold text-background">Set up wallet</Text>

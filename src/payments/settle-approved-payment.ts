@@ -1,3 +1,4 @@
+import { AmbiguousPaymentError } from "./payment-errors";
 import { clearVerified402, queueVerified402 } from "./paid-fetch";
 import { attachPaymentRequiredHeader } from "./x402-fetch-compat";
 import {
@@ -7,7 +8,12 @@ import {
   type X402PaymentRequest,
 } from "./x402-request";
 
+export { AmbiguousPaymentError, isAmbiguousPaymentError } from "./payment-errors";
+
+export const X402_PAID_BODY_MAX_CHARS = 16_384;
+
 export type SettleApprovedPaymentResult = {
+  paidBody: string;
   signature: string;
 };
 
@@ -40,14 +46,20 @@ export async function settleApprovedPayment(input: {
       input.request.resourceUrl,
       verifiedResponse,
     );
+    const signature = tryReadSettlementSignature(paidResponse);
+    const paidBody = await readPaidBody(paidResponse);
+
+    if (signature) {
+      return { paidBody, signature };
+    }
 
     if (!paidResponse.ok) {
-      throw new Error(
-        `Payment retry failed with HTTP ${paidResponse.status}.`,
+      throw new AmbiguousPaymentError(
+        `Payment retry failed with HTTP ${paidResponse.status}. Do not retry; the payment may already be on-chain.`,
       );
     }
 
-    return { signature: readSettlementSignature(paidResponse) };
+    throw new Error("Paid response did not include a settlement signature.");
   } finally {
     clearVerified402();
   }
@@ -84,19 +96,28 @@ async function readPaymentChallenge(response: Response) {
 }
 
 export function readSettlementSignature(response: Response) {
+  const signature = tryReadSettlementSignature(response);
+  if (!signature) {
+    throw new Error("Paid response did not include a settlement signature.");
+  }
+
+  return signature;
+}
+
+function tryReadSettlementSignature(response: Response) {
   const header =
     response.headers.get("PAYMENT-RESPONSE") ??
     response.headers.get("X-PAYMENT-RESPONSE");
 
   if (!header) {
-    throw new Error("Paid response did not include a settlement signature.");
+    return null;
   }
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(decodeBase64Utf8(header));
   } catch {
-    throw new Error("Paid response did not include a settlement signature.");
+    return null;
   }
 
   if (
@@ -105,10 +126,18 @@ export function readSettlementSignature(response: Response) {
     typeof (parsed as { transaction?: unknown }).transaction !== "string" ||
     (parsed as { transaction: string }).transaction.length === 0
   ) {
-    throw new Error("Paid response did not include a settlement signature.");
+    return null;
   }
 
   return (parsed as { transaction: string }).transaction;
+}
+
+async function readPaidBody(response: Response) {
+  try {
+    return (await response.text()).slice(0, X402_PAID_BODY_MAX_CHARS);
+  } catch {
+    return "";
+  }
 }
 
 function decodeBase64Utf8(value: string) {

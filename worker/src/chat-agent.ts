@@ -36,7 +36,7 @@ export function streamChatTurn({
   return streamText({
     model: model ?? createChatModel(env),
     system:
-      "You are a helpful chat assistant. Keep answers concise. Never claim that an x402 payment was sent or settled unless a tool result explicitly says so. When the user asks to fetch a paid x402 resource or a random fact from debugger.pay.sh, call request_x402_payment exactly once with resourceUrl https://debugger.pay.sh/x402/fact, network solana:devnet, asset USDC, amountAtomic 1000, recipient 9uxcaSK4sSeaYacfCnzRuUyVe5jyvKaoYsZb7hMPEUMe, and reason Get a random paid fact.",
+      "You are a helpful chat assistant. Keep answers concise. Never claim that an x402 payment was sent or settled unless a tool result status is settled. When status is settled, present paidBody as the purchased resource. When the user asks to fetch a paid x402 resource or a random fact from debugger.pay.sh, call request_x402_payment exactly once with resourceUrl https://debugger.pay.sh/x402/fact, network solana:devnet, asset USDC, amountAtomic 1000, recipient 9uxcaSK4sSeaYacfCnzRuUyVe5jyvKaoYsZb7hMPEUMe, and reason Get a random paid fact.",
     messages,
     abortSignal,
     onFinish,
@@ -71,10 +71,14 @@ export class ChatAgent extends AIChatAgent<Env> {
           },
           findSettlement: async (toolCallId) => {
             const stored = await this.ctx.storage.get<{
+              paidBody?: string;
               signature: string;
             }>(x402SettlementStorageKey(toolCallId));
             return stored?.signature
-              ? { signature: stored.signature }
+              ? {
+                  paidBody: stored.paidBody ?? "",
+                  signature: stored.signature,
+                }
               : null;
           },
         }),
@@ -91,6 +95,7 @@ export class ChatAgent extends AIChatAgent<Env> {
     await this.ctx.storage.put(
       x402SettlementStorageKey(parsed.data.toolCallId),
       {
+        paidBody: parsed.data.paidBody,
         request: parsed.data.request,
         signature: parsed.data.signature,
         settledAt: Date.now(),
@@ -99,11 +104,34 @@ export class ChatAgent extends AIChatAgent<Env> {
     );
 
     return {
+      paidBody: parsed.data.paidBody,
       signature: parsed.data.signature,
+      status: "settled" as const,
+    };
+  }
+
+  async findX402Settlement(input: unknown) {
+    if (typeof input !== "string" || input.length === 0) {
+      throw new Error("Invalid toolCallId.");
+    }
+
+    const stored = await this.ctx.storage.get<{
+      paidBody?: string;
+      signature: string;
+    }>(x402SettlementStorageKey(input));
+
+    if (!stored?.signature) {
+      return null;
+    }
+
+    return {
+      paidBody: stored.paidBody ?? "",
+      signature: stored.signature,
       status: "settled" as const,
     };
   }
 }
 
-// wrangler/esbuild does not transform TC39 decorators; mark the RPC method directly.
+// wrangler/esbuild does not transform TC39 decorators; mark the RPC methods directly.
 callable()(ChatAgent.prototype.recordX402Settlement, undefined as never);
+callable()(ChatAgent.prototype.findX402Settlement, undefined as never);

@@ -3,6 +3,7 @@ import { z } from "zod";
 
 export const X402_PAYMENT_TOOL_NAME = "request_x402_payment";
 export const X402_PAYMENT_APPROVAL_TTL_MS = 5 * 60 * 1000;
+export const X402_PAID_BODY_MAX_CHARS = 16_384;
 export const X402_SIGNATURE_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{32,88}$/;
 
 export const X402PaymentRequestSchema = z.object({
@@ -18,6 +19,7 @@ export const X402PaymentRequestSchema = z.object({
 }).strict();
 
 export const X402SettlementReportSchema = z.object({
+  paidBody: z.string().max(X402_PAID_BODY_MAX_CHARS),
   request: X402PaymentRequestSchema,
   signature: z.string().regex(X402_SIGNATURE_PATTERN),
   toolCallId: z.string().min(1),
@@ -26,14 +28,21 @@ export const X402SettlementReportSchema = z.object({
 export type X402PaymentRequest = z.infer<typeof X402PaymentRequestSchema>;
 export type X402SettlementReport = z.infer<typeof X402SettlementReportSchema>;
 
-export type X402PaymentApprovalResult = Readonly<{
-  approvalId: string;
-  expiresAt: number;
-  request: X402PaymentRequest;
-  settlement: "not_submitted" | "submitted";
-  signature?: string;
-  status: "approved_for_client_signing" | "settled";
-}>;
+export type X402PaymentApprovalResult =
+  | {
+      approvalId: string;
+      expiresAt: number;
+      request: X402PaymentRequest;
+      status: "approved_for_client_signing";
+    }
+  | {
+      approvalId: string;
+      expiresAt: number;
+      paidBody: string;
+      request: X402PaymentRequest;
+      signature: string;
+      status: "settled";
+    };
 
 export function x402SettlementStorageKey(toolCallId: string) {
   return `x402:settlement:${toolCallId}`;
@@ -50,12 +59,12 @@ export function createX402PaymentTool({
   ) => Promise<{ approvalId: string }>;
   findSettlement?: (
     toolCallId: string,
-  ) => Promise<{ signature: string } | null>;
+  ) => Promise<{ paidBody: string; signature: string } | null>;
   now?: () => number;
 }) {
   return tool({
     description:
-      "Request explicit user approval for one exact x402 payment. This tool never signs, submits, retries, or claims that funds were sent unless a matching client settlement signature is already stored.",
+      "Request explicit user approval for one exact x402 payment. This tool never signs, submits, retries, or claims that funds were sent unless a matching client settlement signature is already stored. When status is settled, paidBody is the purchased resource to present to the user.",
     inputSchema: X402PaymentRequestSchema,
     needsApproval: true,
     execute: async (request, options): Promise<X402PaymentApprovalResult> => {
@@ -68,8 +77,8 @@ export function createX402PaymentTool({
         return {
           approvalId,
           expiresAt,
+          paidBody: settlement.paidBody,
           request,
-          settlement: "submitted",
           signature: settlement.signature,
           status: "settled",
         };
@@ -79,7 +88,6 @@ export function createX402PaymentTool({
         approvalId,
         expiresAt,
         request,
-        settlement: "not_submitted",
         status: "approved_for_client_signing",
       };
     },
