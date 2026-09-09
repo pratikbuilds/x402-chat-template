@@ -104,6 +104,8 @@ function useMockChat(): ChatAdapter {
   }, [input, isGenerating, messages, streamingStore]);
 
   return {
+    approvePayment: () => {},
+    approvals: [],
     messages,
     input,
     setInput,

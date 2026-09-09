@@ -1,4 +1,4 @@
-import type { UIMessage } from "ai";
+import { getToolName, isToolUIPart, type UIMessage } from "ai";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { createStreamingStore, type StreamingStore } from "../components/chat/streaming-store";
@@ -7,6 +7,7 @@ import type { ChatMessage } from "../components/chat/types";
 export type ChatStatus = "ready" | "submitted" | "streaming" | "error";
 
 export type ChatTransport = {
+  addToolApprovalResponse: (response: { approved: boolean; id: string }) => void;
   error: unknown;
   isRecovering: boolean;
   isStreaming: boolean;
@@ -16,12 +17,19 @@ export type ChatTransport = {
   stop: () => void;
 };
 
+export type ChatPaymentApproval = Readonly<{
+  id: string;
+  input: unknown;
+}>;
+
 type UseChatAdapterOptions = {
   onBeforeSend?: (text: string) => void;
   transport: ChatTransport;
 };
 
 export type ChatAdapter = {
+  approvePayment: (id: string, approved: boolean) => void;
+  approvals: ChatPaymentApproval[];
   error: Error | null;
   input: string;
   isGenerating: boolean;
@@ -32,6 +40,22 @@ export type ChatAdapter = {
   stop: () => void;
   streamingStore: StreamingStore;
 };
+
+export function projectChatPaymentApprovals(messages: UIMessage[]) {
+  return messages.flatMap((message): ChatPaymentApproval[] =>
+    message.parts.flatMap((part) => {
+      if (
+        !isToolUIPart(part) ||
+        getToolName(part) !== "request_x402_payment" ||
+        part.state !== "approval-requested"
+      ) {
+        return [];
+      }
+
+      return [{ id: part.approval.id, input: part.input }];
+    }),
+  );
+}
 
 function getTextFromParts(parts: UIMessage["parts"]) {
   return parts
@@ -89,6 +113,10 @@ export function useChatAdapter({
     () => projectChatMessages(transport.messages, transport.isStreaming),
     [transport.isStreaming, transport.messages],
   );
+  const approvals = useMemo(
+    () => projectChatPaymentApprovals(transport.messages),
+    [transport.messages],
+  );
 
   useEffect(() => {
     if (!transport.isStreaming) {
@@ -123,6 +151,10 @@ export function useChatAdapter({
   }, [input, isGenerating, onBeforeSend, transport]);
 
   return {
+    approvePayment: (id: string, approved: boolean) => {
+      transport.addToolApprovalResponse({ approved, id });
+    },
+    approvals,
     messages,
     input,
     setInput,

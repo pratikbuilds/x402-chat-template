@@ -77,6 +77,10 @@ Edit `global.css` to change the design tokens. Colors use OKLCH for perceptual u
 
 The template ships with mock streaming responses in `app/index.tsx`. Replace `mockStreamResponse` with your API integration -- the streaming architecture (`createStreamingStore` + throttled token callback) is ready for real LLM APIs.
 
+### x402 Payment Approvals
+
+The Cloudflare Agent exposes a `request_x402_payment` tool for exact Solana devnet USDC requests. The tool always pauses for a visible user approval, persists an approval record in the conversation Durable Object, and reports `not_submitted` until a later client-authorized signing and settlement flow is configured. It never holds a private key, signs, submits, retries, or claims that funds were sent.
+
 ### Database
 
 I recommend using Convex, which you can setup in a single command:
