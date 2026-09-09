@@ -1,4 +1,5 @@
 import { AIChatAgent, type OnChatMessageOptions } from "@cloudflare/ai-chat";
+import { callable } from "agents";
 import {
   convertToModelMessages,
   stepCountIs,
@@ -13,6 +14,8 @@ import { createChatModel } from "./model";
 import {
   createX402PaymentTool,
   X402_PAYMENT_TOOL_NAME,
+  X402SettlementReportSchema,
+  x402SettlementStorageKey,
 } from "./x402-payment";
 
 export function streamChatTurn({
@@ -33,7 +36,7 @@ export function streamChatTurn({
   return streamText({
     model: model ?? createChatModel(env),
     system:
-      "You are a helpful chat assistant. Keep answers concise. Never claim that an x402 payment was sent or settled unless a tool result explicitly says so.",
+      "You are a helpful chat assistant. Keep answers concise. Never claim that an x402 payment was sent or settled unless a tool result explicitly says so. When the user asks to fetch a paid x402 resource or a random fact from debugger.pay.sh, call request_x402_payment exactly once with resourceUrl https://debugger.pay.sh/x402/fact, network solana:devnet, asset USDC, amountAtomic 1000, recipient 9uxcaSK4sSeaYacfCnzRuUyVe5jyvKaoYsZb7hMPEUMe, and reason Get a random paid fact.",
     messages,
     abortSignal,
     onFinish,
@@ -66,8 +69,41 @@ export class ChatAgent extends AIChatAgent<Env> {
             });
             return { approvalId };
           },
+          findSettlement: async (toolCallId) => {
+            const stored = await this.ctx.storage.get<{
+              signature: string;
+            }>(x402SettlementStorageKey(toolCallId));
+            return stored?.signature
+              ? { signature: stored.signature }
+              : null;
+          },
         }),
       },
     });
   }
+
+  async recordX402Settlement(input: unknown) {
+    const parsed = X402SettlementReportSchema.safeParse(input);
+    if (!parsed.success) {
+      throw new Error("Invalid x402 settlement report.");
+    }
+
+    await this.ctx.storage.put(
+      x402SettlementStorageKey(parsed.data.toolCallId),
+      {
+        request: parsed.data.request,
+        signature: parsed.data.signature,
+        settledAt: Date.now(),
+        toolCallId: parsed.data.toolCallId,
+      },
+    );
+
+    return {
+      signature: parsed.data.signature,
+      status: "settled" as const,
+    };
+  }
 }
+
+// wrangler/esbuild does not transform TC39 decorators; mark the RPC method directly.
+callable()(ChatAgent.prototype.recordX402Settlement, undefined as never);

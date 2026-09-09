@@ -106,11 +106,13 @@ function useMockChat(): ChatAdapter {
   return {
     approvePayment: () => {},
     approvals: [],
+    canSettlePayment: false,
     messages,
     input,
     setInput,
     isGenerating,
     onSend: handleSend,
+    paymentSettlement: { status: "idle" },
     streamingStore,
     error: null,
     isRecovering: false,

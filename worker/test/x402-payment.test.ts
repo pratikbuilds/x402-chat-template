@@ -4,6 +4,7 @@ import {
   createX402PaymentTool,
   type X402PaymentRequest,
   X402PaymentRequestSchema,
+  X402SettlementReportSchema,
 } from "../src/x402-payment";
 
 const request = {
@@ -46,6 +47,56 @@ describe("request_x402_payment", () => {
     expect(createApproval).toHaveBeenCalledWith(request, 301_000);
   });
 
+  it("returns a stored client settlement signature after approval", async () => {
+    const paymentTool = createX402PaymentTool({
+      createApproval: async () => ({ approvalId: "approval-2" }),
+      findSettlement: async () => ({
+        signature: "5HjgkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYz11111",
+      }),
+      now: () => 1_000,
+    });
+
+    if (!paymentTool.execute) {
+      throw new Error("The payment tool must have an execution boundary.");
+    }
+
+    await expect(
+      paymentTool.execute(request, {
+        messages: [],
+        toolCallId: "tool-call-2",
+      }),
+    ).resolves.toEqual({
+      approvalId: "approval-2",
+      expiresAt: 301_000,
+      request,
+      settlement: "submitted",
+      signature: "5HjgkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYz11111",
+      status: "settled",
+    });
+  });
+
+  it("looks up a stored settlement by toolCallId, not request content", async () => {
+    const seen: string[] = [];
+    const paymentTool = createX402PaymentTool({
+      createApproval: async () => ({ approvalId: "approval-3" }),
+      findSettlement: async (toolCallId) => {
+        seen.push(toolCallId);
+        return null;
+      },
+      now: () => 1_000,
+    });
+
+    if (!paymentTool.execute) {
+      throw new Error("The payment tool must have an execution boundary.");
+    }
+
+    await paymentTool.execute(request, {
+      messages: [],
+      toolCallId: "tool-call-3",
+    });
+    expect(seen).toEqual(["tool-call-3"]);
+  });
+
   it("rejects payment requests outside the devnet USDC contract", () => {
     expect(
       X402PaymentRequestSchema.safeParse({
@@ -69,6 +120,26 @@ describe("request_x402_payment", () => {
       X402PaymentRequestSchema.safeParse({
         ...request,
         unexpected: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      X402SettlementReportSchema.safeParse({
+        request,
+        signature: "5HjgkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYz11111",
+        toolCallId: "tool-call-1",
+      }).success,
+    ).toBe(true);
+    expect(
+      X402SettlementReportSchema.safeParse({
+        request,
+        signature: "5HjgkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYz11111",
+      }).success,
+    ).toBe(false);
+    expect(
+      X402SettlementReportSchema.safeParse({
+        request,
+        signature: "not-a-signature",
+        toolCallId: "tool-call-1",
       }).success,
     ).toBe(false);
   });

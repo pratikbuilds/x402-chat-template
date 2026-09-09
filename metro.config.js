@@ -1,5 +1,6 @@
 const { getDefaultConfig } = require("expo/metro-config");
 const { withUniwindConfig } = require("uniwind/metro");
+const path = require("path");
 
 /** @type {import('expo/metro-config').MetroConfig} */
 const config = withUniwindConfig(getDefaultConfig(__dirname), {
@@ -8,6 +9,7 @@ const config = withUniwindConfig(getDefaultConfig(__dirname), {
 });
 
 const defaultResolveRequest = config.resolver.resolveRequest;
+const nodeCryptoShim = path.resolve(__dirname, "src/shims/node-crypto.js");
 
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (
@@ -17,6 +19,23 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     return {
       type: "empty",
     };
+  }
+
+  if (moduleName === "crypto") {
+    const origin = context.originModulePath ?? "";
+    if (
+      origin.includes("@solana/pay-kit") ||
+      origin.includes("@solana+pay-kit") ||
+      origin.includes("@x402/") ||
+      origin.includes("@x402+") ||
+      origin.includes("x402-svm")
+    ) {
+      // pay-kit's bundled @x402/svm imports Node createHash from "crypto".
+      return {
+        filePath: nodeCryptoShim,
+        type: "sourceFile",
+      };
+    }
   }
 
   if (moduleName === "jose") {

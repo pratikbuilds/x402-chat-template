@@ -24,6 +24,10 @@ import {
   type ReactNode,
 } from "react";
 
+import {
+  isPrivySolanaSignProvider,
+  type PrivySolanaSignProvider,
+} from "@/payments/privy-kit-signer";
 import { getSecureRandomnessError } from "@/polyfills";
 
 const MWA_IDENTITY = {
@@ -35,7 +39,7 @@ const SOLANA_DEVNET = createSolanaDevnet();
 
 type WalletAction = "connect" | "sign-in" | "create" | "disconnect";
 
-type WalletState =
+export type WalletState =
   | { kind: "unavailable"; message: string }
   | { kind: "loading" }
   | { kind: "external-wallet-disconnected" }
@@ -45,9 +49,35 @@ type WalletState =
   | { kind: "error"; action: WalletAction; message: string }
   | { kind: "ready" };
 
+export function getWalletStatusText(state: WalletState) {
+  switch (state.kind) {
+    case "unavailable":
+      return state.message;
+    case "loading":
+      return "Preparing wallet services…";
+    case "external-wallet-disconnected":
+      return "Connect a Solana wallet to sign in.";
+    case "ready-to-sign-in":
+      return "Approve the Sign-In With Solana message in your wallet.";
+    case "ready-to-create":
+      return "Your in-app wallet is ready to create.";
+    case "working":
+      return "Working…";
+    case "error":
+      return state.message;
+    case "ready":
+      return "Your wallet is ready. Payments will always need approval.";
+    default: {
+      const _exhaustive: never = state;
+      return _exhaustive;
+    }
+  }
+}
+
 type WalletContextValue = Readonly<{
   embeddedWalletAddress: string | null;
   externalWalletAddress: string | null;
+  getEmbeddedSolanaProvider: (() => Promise<PrivySolanaSignProvider>) | null;
   state: WalletState;
   connectExternalWallet: () => Promise<void>;
   createEmbeddedWallet: () => Promise<void>;
@@ -61,6 +91,7 @@ const unavailableWalletValue = (message: string) =>
   ({
     embeddedWalletAddress: null,
     externalWalletAddress: null,
+    getEmbeddedSolanaProvider: null,
     state: { kind: "unavailable", message },
     connectExternalWallet: doNothing,
     createEmbeddedWallet: doNothing,
@@ -193,10 +224,26 @@ function WalletConnectionProvider({ children }: { children: ReactNode }) {
     user,
   ]);
 
+  const getEmbeddedSolanaProvider = useMemo(() => {
+    if (state.kind !== "ready" || !embeddedWallet) {
+      return null;
+    }
+
+    const wallet = embeddedWallet;
+    return async () => {
+      const provider = await wallet.getProvider();
+      if (!isPrivySolanaSignProvider(provider)) {
+        throw new Error("The in-app wallet is not ready to pay.");
+      }
+      return provider;
+    };
+  }, [embeddedWallet, state.kind]);
+
   const value = useMemo<WalletContextValue>(
     () => ({
       embeddedWalletAddress,
       externalWalletAddress,
+      getEmbeddedSolanaProvider,
       state,
       connectExternalWallet,
       createEmbeddedWallet,
@@ -209,6 +256,7 @@ function WalletConnectionProvider({ children }: { children: ReactNode }) {
       disconnectWallets,
       embeddedWalletAddress,
       externalWalletAddress,
+      getEmbeddedSolanaProvider,
       signInWithSolana,
       state,
     ],
@@ -254,11 +302,15 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 }
 
 export function useWallet() {
-  const value = useContext(WalletContext);
+  const value = useOptionalWallet();
 
   if (!value) {
     throw new Error("useWallet must be used within WalletProvider.");
   }
 
   return value;
+}
+
+export function useOptionalWallet() {
+  return useContext(WalletContext);
 }

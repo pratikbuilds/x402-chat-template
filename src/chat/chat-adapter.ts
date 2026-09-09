@@ -13,6 +13,16 @@ export type ChatTransport = {
   isStreaming: boolean;
   messages: UIMessage[];
   sendMessage: (message: { text: string }) => void;
+  settlePayment?: (input: {
+    id: string;
+    request: unknown;
+  }) => Promise<{ signature: string }>;
+  recordSettlement?: (input: {
+    id: string;
+    request: unknown;
+    signature: string;
+    toolCallId: string;
+  }) => Promise<void>;
   status: ChatStatus;
   stop: () => void;
 };
@@ -20,6 +30,7 @@ export type ChatTransport = {
 export type ChatPaymentApproval = Readonly<{
   id: string;
   input: unknown;
+  toolCallId: string;
 }>;
 
 type UseChatAdapterOptions = {
@@ -27,15 +38,23 @@ type UseChatAdapterOptions = {
   transport: ChatTransport;
 };
 
+export type PaymentSettlement =
+  | { status: "idle" }
+  | { status: "paying"; approvalId: string }
+  | { status: "settled"; approvalId: string; signature: string }
+  | { status: "failed"; approvalId: string; message: string };
+
 export type ChatAdapter = {
   approvePayment: (id: string, approved: boolean) => void;
   approvals: ChatPaymentApproval[];
+  canSettlePayment: boolean;
   error: Error | null;
   input: string;
   isGenerating: boolean;
   isRecovering: boolean;
   messages: ChatMessage[];
   onSend: () => void;
+  paymentSettlement: PaymentSettlement;
   setInput: (value: string) => void;
   stop: () => void;
   streamingStore: StreamingStore;
@@ -52,7 +71,13 @@ export function projectChatPaymentApprovals(messages: UIMessage[]) {
         return [];
       }
 
-      return [{ id: part.approval.id, input: part.input }];
+      return [
+        {
+          id: part.approval.id,
+          input: part.input,
+          toolCallId: part.toolCallId,
+        },
+      ];
     }),
   );
 }
@@ -102,6 +127,11 @@ export function useChatAdapter({
   transport,
 }: UseChatAdapterOptions): ChatAdapter {
   const [input, setInput] = useState("");
+  const [paymentSettlement, setPaymentSettlement] = useState<PaymentSettlement>(
+    { status: "idle" },
+  );
+  const receipts = useRef(new Map<string, string>());
+  const payingApprovalId = useRef<string | null>(null);
   const streamingStore = useMemo(() => createStreamingStore(), []);
   const previousStreamingText = useRef("");
   const isGenerating =
@@ -150,17 +180,104 @@ export function useChatAdapter({
     setInput("");
   }, [input, isGenerating, onBeforeSend, transport]);
 
-  return {
-    approvePayment: (id: string, approved: boolean) => {
-      transport.addToolApprovalResponse({ approved, id });
+  const approvePayment = useCallback(
+    (id: string, approved: boolean) => {
+      if (!approved) {
+        payingApprovalId.current = null;
+        setPaymentSettlement({ status: "idle" });
+        transport.addToolApprovalResponse({ approved: false, id });
+        return;
+      }
+
+      if (!transport.settlePayment) {
+        transport.addToolApprovalResponse({ approved: true, id });
+        return;
+      }
+
+      if (payingApprovalId.current === id) {
+        return;
+      }
+
+      const approval = projectChatPaymentApprovals(transport.messages).find(
+        (item) => item.id === id,
+      );
+      if (!approval) {
+        setPaymentSettlement({
+          approvalId: id,
+          message: "Payment details could not be found.",
+          status: "failed",
+        });
+        return;
+      }
+
+      const finishAfterRecord = async (signature: string) => {
+        receipts.current.set(id, signature);
+        setPaymentSettlement({
+          approvalId: id,
+          signature,
+          status: "settled",
+        });
+
+        if (transport.recordSettlement) {
+          try {
+            await transport.recordSettlement({
+              id,
+              request: approval.input,
+              signature,
+              toolCallId: approval.toolCallId,
+            });
+          } catch {
+            payingApprovalId.current = null;
+            setPaymentSettlement({
+              approvalId: id,
+              message:
+                "Paid, but the receipt could not be saved. Tap Approve to retry without paying again.",
+              status: "failed",
+            });
+            return;
+          }
+        }
+
+        payingApprovalId.current = null;
+        transport.addToolApprovalResponse({ approved: true, id });
+      };
+
+      const cachedSignature = receipts.current.get(id);
+      if (cachedSignature) {
+        payingApprovalId.current = id;
+        void finishAfterRecord(cachedSignature);
+        return;
+      }
+
+      payingApprovalId.current = id;
+      setPaymentSettlement({ approvalId: id, status: "paying" });
+
+      void transport
+        .settlePayment({ id, request: approval.input })
+        .then((result) => finishAfterRecord(result.signature))
+        .catch((error: unknown) => {
+          payingApprovalId.current = null;
+          setPaymentSettlement({
+            approvalId: id,
+            message: toChatError(error)?.message ?? "Payment failed.",
+            status: "failed",
+          });
+        });
     },
+    [transport],
+  );
+
+  return {
+    approvePayment,
     approvals,
+    canSettlePayment: Boolean(transport.settlePayment),
     messages,
     input,
     setInput,
     isGenerating,
     isRecovering: transport.isRecovering,
     onSend,
+    paymentSettlement,
     stop: transport.stop,
     streamingStore,
     error: toChatError(transport.error),

@@ -1,4 +1,4 @@
-import { useWallet } from "@/wallet/wallet-provider";
+import { getWalletStatusText, useWallet } from "@/wallet/wallet-provider";
 import { CircleCheck, ShieldCheck, WalletCards } from "lucide-react-native";
 import type { LucideIcon } from "lucide-react-native";
 import { Pressable, ScrollView, Text, View } from "react-native";
@@ -54,31 +54,6 @@ function getPrimaryAction({
   }
 }
 
-function getStatusText(state: ReturnType<typeof useWallet>["state"]) {
-  switch (state.kind) {
-    case "unavailable":
-      return state.message;
-    case "loading":
-      return "Preparing wallet services…";
-    case "external-wallet-disconnected":
-      return "Connect a Solana wallet to sign in.";
-    case "ready-to-sign-in":
-      return "Approve the Sign-In With Solana message in your wallet.";
-    case "ready-to-create":
-      return "Your in-app wallet is ready to create.";
-    case "working":
-      return "Working…";
-    case "error":
-      return state.message;
-    case "ready":
-      return "Your wallet is ready. Payments will always need approval.";
-    default: {
-      const _exhaustive: never = state;
-      return _exhaustive;
-    }
-  }
-}
-
 export default function WalletPaymentsScreen() {
   const wallet = useWallet();
   const primaryAction = getPrimaryAction(wallet);
@@ -116,7 +91,7 @@ export default function WalletPaymentsScreen() {
           </Text>
         </View>
         <Text selectable className="text-[14px] leading-5 text-muted-foreground">
-          {getStatusText(wallet.state)}
+          {getWalletStatusText(wallet.state)}
         </Text>
       </View>
 
