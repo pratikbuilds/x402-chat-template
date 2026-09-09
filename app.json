@@ -4,7 +4,7 @@
     "slug": "chat",
     "version": "1.0.0",
     "orientation": "portrait",
-    "scheme": "chat",
+    "scheme": "x402-chat",
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "com.pratiksaria.chat",

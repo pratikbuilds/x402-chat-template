@@ -2,7 +2,12 @@ const { getDefaultConfig } = require("expo/metro-config");
 const { withUniwindConfig } = require("uniwind/metro");
 
 /** @type {import('expo/metro-config').MetroConfig} */
-const config = getDefaultConfig(__dirname);
+const config = withUniwindConfig(getDefaultConfig(__dirname), {
+  cssEntryFile: "./src/global.css",
+  debug: true,
+});
+
+const defaultResolveRequest = config.resolver.resolveRequest;
 
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (
@@ -13,10 +18,20 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
       type: "empty",
     };
   }
-  return context.resolveRequest(context, moduleName, platform);
+
+  if (moduleName === "jose") {
+    const browserContext = {
+      ...context,
+      unstable_conditionNames: ["browser"],
+    };
+    return defaultResolveRequest
+      ? defaultResolveRequest(browserContext, moduleName, platform)
+      : browserContext.resolveRequest(browserContext, moduleName, platform);
+  }
+
+  return defaultResolveRequest
+    ? defaultResolveRequest(context, moduleName, platform)
+    : context.resolveRequest(context, moduleName, platform);
 };
 
-module.exports = withUniwindConfig(config, {
-  cssEntryFile: "./src/global.css",
-  debug: true,
-});
+module.exports = config;

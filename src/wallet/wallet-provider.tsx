@@ -28,7 +28,7 @@ import { getSecureRandomnessError } from "@/polyfills";
 
 const MWA_IDENTITY = {
   name: "Chat",
-  uri: "chat://wallet",
+  uri: "x402-chat://wallet",
 } satisfies AppIdentity;
 
 const SOLANA_DEVNET = createSolanaDevnet();
@@ -122,7 +122,7 @@ function WalletConnectionProvider({ children }: { children: ReactNode }) {
       }
 
       const { message } = await generateMessage({
-        from: { domain: "chat", uri: "chat://privy-login" },
+        from: { domain: "x402-chat", uri: "x402-chat://privy-login" },
         wallet: { address: account.address.toString() },
       });
       const signature = fromUint8Array(
