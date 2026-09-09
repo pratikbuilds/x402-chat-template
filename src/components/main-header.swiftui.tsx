@@ -15,7 +15,7 @@ import {
   font,
   foregroundStyle,
 } from "@expo/ui/swift-ui/modifiers";
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { useColorScheme } from "react-native";
 import { useDrawer } from "./drawer-content";
 
@@ -87,6 +87,7 @@ function HeaderTitleMenu() {
 
 export function MainHeader() {
   const { openDrawer } = useDrawer();
+  const router = useRouter();
   return (
     <>
       <Stack.Screen.Title asChild>
@@ -96,7 +97,10 @@ export function MainHeader() {
         <Stack.Toolbar.Button icon="list.bullet" onPress={openDrawer} />
       </Stack.Toolbar>
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Button icon="eyeglasses" />
+        <Stack.Toolbar.Button
+          icon="wallet.pass"
+          onPress={() => router.navigate("/(settings)/wallet-payments")}
+        />
       </Stack.Toolbar>
     </>
   );

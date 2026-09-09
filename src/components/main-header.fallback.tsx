@@ -1,7 +1,7 @@
 import { Icon } from "@/components/icon";
 import { useModel } from "@/components/model-context";
-import { Link, Stack } from "expo-router";
-import { ChevronDown, Glasses, Menu } from "lucide-react-native";
+import { Link, Stack, useRouter } from "expo-router";
+import { ChevronDown, Menu, WalletCards } from "lucide-react-native";
 import { Pressable, Text, View } from "react-native";
 import { useDrawer } from "./drawer-content";
 
@@ -32,6 +32,7 @@ function HeaderTitleMenu() {
 
 export function MainHeader() {
   const { openDrawer } = useDrawer();
+  const router = useRouter();
   return (
     <>
       {process.env.EXPO_OS === "ios" ? (
@@ -64,11 +65,12 @@ export function MainHeader() {
         // TODO: Migrate to unified Toolbar support for Android in SDK 56
         <Stack.Toolbar placement="right" asChild>
           <Pressable
-            accessibilityLabel="Reader"
+            accessibilityLabel="Wallet and payments"
             accessibilityRole="button"
             className="p-2 -mr-1 active:opacity-60"
+            onPress={() => router.navigate("/(settings)/wallet-payments")}
           >
-            <Icon icon={Glasses} className="w-6 h-6 text-foreground" />
+            <Icon icon={WalletCards} className="w-6 h-6 text-foreground" />
           </Pressable>
         </Stack.Toolbar>
       )}

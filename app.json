@@ -4,17 +4,17 @@
     "slug": "chat",
     "version": "1.0.0",
     "orientation": "portrait",
-    "scheme": "chat",
+    "scheme": "x402-chat",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "bundleIdentifier": "dev.expo.chat",
+      "bundleIdentifier": "com.pratiksaria.chat",
       "infoPlist": {
         "UIViewControllerBasedStatusBarAppearance": true,
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
-      "package": "dev.expo.chat",
+      "package": "com.pratiksaria.chat",
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -39,7 +39,8 @@
       "expo-image",
       "expo-web-browser",
       "expo-system-ui",
-      "expo-status-bar"
+      "expo-status-bar",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,

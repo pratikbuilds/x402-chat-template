@@ -68,6 +68,15 @@ export default function SettingsLayout() {
           title: "Capabilities",
         }}
       />
+      <Stack.Screen
+        name="wallet-payments"
+        options={{
+          title: "Wallet & payments",
+          presentation: "formSheet",
+          sheetAllowedDetents: "fitToContents",
+          sheetGrabberVisible: true,
+        }}
+      />
     </Stack>
   );
 }

@@ -13,6 +13,7 @@ import { StatusBar } from "expo-status-bar";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 
 import { ModelProvider } from "@/components/model-context";
+import { WalletProvider } from "@/wallet/wallet-provider";
 import {
   DarkTheme,
   DefaultTheme,
@@ -69,11 +70,13 @@ export default function RootLayout() {
   return (
     <ThemeProvider>
       <KeyboardProvider>
-        <ModelProvider models={ALL_MODELS}>
-          <DrawerProvider>
-            <RootDrawer />
-          </DrawerProvider>
-        </ModelProvider>
+        <WalletProvider>
+          <ModelProvider models={ALL_MODELS}>
+            <DrawerProvider>
+              <RootDrawer />
+            </DrawerProvider>
+          </ModelProvider>
+        </WalletProvider>
         {process.env.EXPO_OS !== "ios" && <StatusBar style="auto" />}
       </KeyboardProvider>
     </ThemeProvider>
