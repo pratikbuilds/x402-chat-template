@@ -1,0 +1,32 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "chat-development-agent",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "ChatAgent",
+        "class_name": "ChatAgent"
+      }
+    ]
+  },
+  "exports": {
+    "ChatAgent": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    }
+  },
+  "ai": {
+    "binding": "AI",
+    "remote": true
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {
+    "DEPLOYMENT_ENVIRONMENT": "development"
+  }
+}
