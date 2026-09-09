@@ -16,6 +16,7 @@ import {
   TrendingUp,
   Users,
   Vibrate,
+  WalletCards,
 } from "lucide-react-native";
 import { useState } from "react";
 import { Pressable, ScrollView, Switch, Text, View } from "react-native";
@@ -44,6 +45,12 @@ export default function SettingsScreen() {
         icon={CircleUser}
         label="Profile"
         href="/(settings)/profile"
+      />
+      <SettingsRow
+        icon={WalletCards}
+        label="Wallet & payments"
+        detail="Set up"
+        href="/(settings)/wallet-payments"
       />
       <SettingsRow icon={CircleDollarSign} label="Billing" detail="Max plan" />
       <SettingsRow icon={TrendingUp} label="Usage" />
