@@ -26,6 +26,7 @@ export function useCloudflareChat({
   return useChatAdapter({
     onBeforeSend,
     transport: {
+      addToolApprovalResponse: chat.addToolApprovalResponse,
       error: chat.error ?? chat.connectionError ?? agent.connectionError,
       isRecovering: chat.isRecovering,
       isStreaming: chat.isStreaming,

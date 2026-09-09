@@ -8,6 +8,8 @@ import { ActivityIndicator, View } from "react-native";
 
 function createErrorChatAdapter(error: Error): ChatAdapter {
   return {
+    approvePayment: () => {},
+    approvals: [],
     messages: [],
     input: "",
     setInput: () => {},
@@ -22,6 +24,8 @@ function createErrorChatAdapter(error: Error): ChatAdapter {
 
 function createLoadingChatAdapter(): ChatAdapter {
   return {
+    approvePayment: () => {},
+    approvals: [],
     messages: [],
     input: "",
     setInput: () => {},
