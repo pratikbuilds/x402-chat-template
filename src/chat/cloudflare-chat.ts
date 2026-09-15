@@ -31,9 +31,19 @@ export function useCloudflareChat({ conversationId, onBeforeSend }: {
     paying.current = true;
     setIsPaying(true);
     const id = `payment-${Date.now()}`;
-    chat.setMessages((messages) => [...messages, {
-      id: `${id}-user`, role: "user", parts: [{ type: "text", text }],
-    }]);
+    chat.setMessages((messages) => [
+      ...messages,
+      {
+        id: `${id}-user`,
+        role: "user",
+        parts: [{ type: "text", text }],
+      },
+      {
+        id: `${id}-status`,
+        role: "assistant",
+        parts: [{ type: "text", text: "Making x402 payment…" }],
+      },
+    ]);
     try {
       if (!wallet?.getPaymentSigner) throw new Error("Connect your in-app wallet first.");
       const response = await payForResource({ request, attemptId: id, getSigner: wallet.getPaymentSigner });
@@ -46,11 +56,18 @@ export function useCloudflareChat({ conversationId, onBeforeSend }: {
         ],
       });
     } catch (error) {
-      chat.setMessages((messages) => [...messages, {
-        id: `${id}-error`, role: "assistant", parts: [{
-          type: "text", text: error instanceof Error ? error.message : "Payment failed.",
-        }],
-      }]);
+      chat.setMessages((messages) => messages.map((message) =>
+        message.id === `${id}-status`
+          ? {
+              id: `${id}-error`,
+              role: "assistant",
+              parts: [{
+                type: "text",
+                text: error instanceof Error ? error.message : "Payment failed.",
+              }],
+            }
+          : message,
+      ));
     } finally {
       paying.current = false;
       setIsPaying(false);

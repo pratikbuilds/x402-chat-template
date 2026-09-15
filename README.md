@@ -81,9 +81,9 @@ The template ships with mock streaming responses in `app/index.tsx`. Replace `mo
 
 Send `Call https://your-x402-endpoint` or `Get the current paid BTC-USD bid and ask.` The app executes that request directly with the Privy in-app wallet and keeps the paid response in a collapsed “x402 call” dropdown. The model uses that data to answer in chat. There is no approval screen. Wallet & payments also has a direct BTC quote button. Other messages use the chat model.
 
-The demo accepts exact Solana mainnet USDC payments. Fund the in-app wallet, then ask: `Get a paid BTC-USD bid/ask snapshot`.
+Pay Kit handles the endpoint's 402 response and retries the request with a payment signed by the Privy in-app wallet. After settlement, the app stores the response and transaction signature. Fund the in-app wallet, then ask: `Get a paid BTC-USD bid/ask snapshot`.
 
-Pay Kit 0.9 uses a request-scoped fetch so the payment stays bound to the endpoint challenge. Solana Kit 6.10 matches its token dependency; Expo Crypto supplies SHA-256 on native.
+Solana Kit 6.10 matches Pay Kit's token dependency; Expo Crypto supplies SHA-256 on native.
 
 ### Database
 
