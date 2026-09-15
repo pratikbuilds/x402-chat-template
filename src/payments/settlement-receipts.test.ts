@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import {
+  assertPaymentResourceAvailable,
+  paymentResourceKey,
   loadPaymentAttempt,
   parsePaymentAttemptRecord,
   savePaymentAttempt,
@@ -52,4 +54,19 @@ describe("payment attempt receipts", () => {
     expect(parsePaymentAttemptRecord({ kind: "settled" })).toBeNull();
     expect(parsePaymentAttemptRecord("nope")).toBeNull();
   });
+});
+
+it("blocks a resend by wallet and endpoint until the outcome is known", async () => {
+  const storage = memoryStorage();
+  const url = "https://example.com/quote";
+  const key = paymentResourceKey("wallet", url);
+  await savePaymentAttempt(key, { kind: "unknown" }, storage);
+  await expect(assertPaymentResourceAvailable("wallet", url, storage)).rejects.toThrow("unconfirmed");
+  await expect(assertPaymentResourceAvailable("another-wallet", url, storage)).resolves.toBeTruthy();
+  await savePaymentAttempt(key, { kind: "rejected" }, storage);
+  await expect(assertPaymentResourceAvailable("wallet", url, storage)).resolves.toBe(key);
+  await savePaymentAttempt(key, { kind: "settled", signature: "receipt", paidBody: "quote" }, storage);
+  await expect(assertPaymentResourceAvailable("wallet", url, storage)).resolves.toBe(key);
+  storage.data.set(settlementReceiptStorageKey(key), "{}");
+  await expect(assertPaymentResourceAvailable("wallet", url, storage)).rejects.toThrow();
 });

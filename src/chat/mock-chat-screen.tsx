@@ -104,15 +104,12 @@ function useMockChat(): ChatAdapter {
   }, [input, isGenerating, messages, streamingStore]);
 
   return {
-    approvePayment: () => {},
-    approvals: [],
-    canSettlePayment: false,
+    canSend: !isGenerating,
     messages,
     input,
     setInput,
     isGenerating,
     onSend: handleSend,
-    paymentSettlement: { status: "idle" },
     streamingStore,
     error: null,
     isRecovering: false,

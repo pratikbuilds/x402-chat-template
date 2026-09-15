@@ -10,8 +10,8 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { LayoutChangeEvent, Text, View } from "react-native";
-import { useKeyboardHandler } from "react-native-keyboard-controller";
+import { FlatList, LayoutChangeEvent, Text, View } from "react-native";
+import { KeyboardAvoidingView, useKeyboardHandler } from "react-native-keyboard-controller";
 import Animated, {
   runOnJS,
   useAnimatedProps,
@@ -32,7 +32,6 @@ const IS_GLASS = isLiquidGlassAvailable();
 
 const AnimatedLegendList = Animated.createAnimatedComponent(LegendList);
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Reanimated animated styles are opaque worklet objects
 type AnimatedStyle = any;
 
 type ConversationContextValue = {
@@ -56,7 +55,61 @@ export function useConversationContext() {
   return ctx;
 }
 
-export function Conversation({
+type ConversationProps = {
+  renderMessage: (info: { item: ChatMessage }) => ReactElement;
+  emptyState?: ReactElement;
+  children?: ReactNode;
+};
+
+export function Conversation(props: ConversationProps) {
+  return process.env.EXPO_OS === "android"
+    ? <AndroidConversation {...props} />
+    : <InsetConversation {...props} />;
+}
+
+function AndroidConversation({ renderMessage, emptyState, children }: ConversationProps) {
+  const { messages, streamingStore } = useChatContext();
+  const list = useRef<FlatList<ChatMessage>>(null);
+  const atBottom = useRef(true);
+  const lastScrolledMessage = useRef({ id: "", text: "" });
+  const lastMessage = messages.at(-1);
+  const onContentSizeChange = useCallback(() => {
+    const id = lastMessage?.id ?? "";
+    const text = lastMessage?.content || streamingStore.get();
+    const previous = lastScrolledMessage.current;
+    if (previous.id === id && previous.text === text) return;
+    lastScrolledMessage.current = { id, text };
+    if (atBottom.current) list.current?.scrollToEnd({ animated: false });
+  }, [lastMessage, streamingStore]);
+  const insets = useSafeAreaInsets();
+  const scrollToBottom = useCallback(() => list.current?.scrollToEnd({ animated: true }), []);
+  return (
+    <ConversationCtx value={{ scrollToBottom, promptInputStyle: {}, onPromptInputLayout: () => {}, scrollButtonStyle: { display: "none" } }}>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }} keyboardVerticalOffset={insets.top + 56}>
+        <FlatList
+          ref={list}
+          data={messages}
+          renderItem={renderMessage}
+          keyExtractor={(item) => item.id}
+          style={{ flex: 1 }}
+          contentContainerStyle={{ padding: 16, flexGrow: 1 }}
+          keyboardDismissMode="on-drag"
+          keyboardShouldPersistTaps="handled"
+          onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
+            atBottom.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 80;
+          }}
+          scrollEventThrottle={16}
+          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+          onContentSizeChange={onContentSizeChange}
+          ListEmptyComponent={emptyState}
+        />
+        <View style={{ paddingBottom: insets.bottom }}>{children}</View>
+      </KeyboardAvoidingView>
+    </ConversationCtx>
+  );
+}
+
+function InsetConversation({
   renderMessage,
   emptyState,
   children,
@@ -76,6 +129,7 @@ export function Conversation({
   // -- Keyboard tracking --------------------------------------------------
 
   const scrollToBottomRef = useRef<() => void>(() => {});
+  const scrollFromKeyboard = useCallback(() => scrollToBottomRef.current(), []);
   const keyboardHeight = useSharedValue(0);
   // Separate value for contentInset that freezes during interactive dismiss
   // to prevent the scroll view from snapping when the user is overscrolled.
@@ -112,7 +166,7 @@ export function Conversation({
         keyboardHeightForInset.value = withTiming(e.height, { duration: 250 });
         wasInteractive.value = false;
         if (shouldScroll) {
-          runOnJS(scrollToBottomRef.current)();
+          runOnJS(scrollFromKeyboard)();
         }
       },
     },
@@ -193,7 +247,7 @@ export function Conversation({
       viewOffset: -bottomInset.value,
     });
   }, []);
-  scrollToBottomRef.current = scrollToBottom;
+  useEffect(() => { scrollToBottomRef.current = scrollToBottom; }, [scrollToBottom]);
 
   useEffect(() => {
     if (didInitialScroll.current || messages.length === 0) {
@@ -223,7 +277,7 @@ export function Conversation({
     const blankSpace = scrollHeight - messagesOnlyHeight.value - bottom;
     const footerHeight = Math.max(0, blankSpace - topPadding);
 
-    currentFooterHeight.value = footerHeight;
+    currentFooterHeight.set(footerHeight);
     return { height: footerHeight };
   });
 
@@ -259,7 +313,7 @@ export function Conversation({
 
   const onPromptInputLayout = useCallback((e: LayoutChangeEvent) => {
     const h = e.nativeEvent.layout.height;
-    composerHeight.value = h;
+    composerHeight.set(h);
     setComposerOffsetHeight(h);
   }, []);
 

@@ -2,6 +2,25 @@ import "fast-text-encoding";
 import "react-native-get-random-values";
 import "@ethersproject/shims";
 import "event-target-polyfill";
+import { Buffer } from "buffer";
+
+globalThis.Buffer ??= Buffer;
+
+// Solana Kit uses Web Crypto for account-address derivation.
+if (process.env.EXPO_OS !== "web" && !globalThis.crypto?.subtle?.digest) {
+  const { digest, CryptoDigestAlgorithm } =
+    require("expo-crypto") as typeof import("expo-crypto");
+  const subtle = globalThis.crypto.subtle ?? {};
+  Object.defineProperty(subtle, "digest", {
+    value: (algorithm: string | { name: string }, data: BufferSource) => {
+      const name = typeof algorithm === "string" ? algorithm : algorithm.name;
+      if (name !== "SHA-256") throw new Error(`Unsupported digest: ${name}`);
+      return digest(CryptoDigestAlgorithm.SHA256, data);
+    },
+  });
+  if (!globalThis.crypto.subtle)
+    Object.defineProperty(globalThis.crypto, "subtle", { value: subtle });
+}
 
 if (typeof globalThis.MessageEvent === "undefined") {
   // partysocket cloneEventNode constructs MessageEvent in React Native.
@@ -31,7 +50,8 @@ if (typeof globalThis.CloseEvent === "undefined") {
 
     constructor(
       typeOrCode: string | number,
-      initOrReason?: { code?: number; reason?: string; wasClean?: boolean } | string,
+      initOrReason?:
+        { code?: number; reason?: string; wasClean?: boolean } | string,
       _event?: unknown,
     ) {
       if (typeof typeOrCode === "number") {

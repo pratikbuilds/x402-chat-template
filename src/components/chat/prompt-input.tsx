@@ -10,11 +10,11 @@ import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-nativ
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 
 import { cn } from "@/utils/tailwind";
-import { BlurView } from "expo-blur";
 import { useChatContext } from "./chat-context";
 import { useConversationContext } from "./conversation";
 
 const AnimatedGlassContainer = Animated.createAnimatedComponent(GlassContainer);
+const ComposerContainer = process.env.EXPO_OS === "android" ? View : AnimatedGlassContainer;
 
 /**
  * Root container for the message composer. Positions itself at the bottom of
@@ -28,12 +28,12 @@ export function PromptInput({ children }: { children: ReactNode }) {
   return (
     <Animated.View
       onLayout={onPromptInputLayout}
-      style={[{ position: "absolute", left: 0, right: 0 }, promptInputStyle]}
+      style={process.env.EXPO_OS === "android" ? undefined : [{ position: "absolute", left: 0, right: 0 }, promptInputStyle]}
+      className="bg-background"
     >
       {error && <PromptInputError message={error.message} />}
-      <AnimatedGlassContainer
+      <ComposerContainer
         style={{
-          flex: 1,
           flexDirection: "row",
           padding: 12,
           gap: 10,
@@ -42,7 +42,7 @@ export function PromptInput({ children }: { children: ReactNode }) {
         spacing={8}
       >
         {children}
-      </AnimatedGlassContainer>
+      </ComposerContainer>
     </Animated.View>
   );
 }
@@ -112,11 +112,9 @@ export function PromptInputBody({ children }: { children: ReactNode }) {
     );
   }
 
-  // TODO: Android version...
   return (
-    <BlurView
-      tint="systemChromeMaterial"
-      className="border-continuous"
+    <View
+      className="border-continuous bg-muted"
       style={{
         flex: 1,
         flexDirection: "row",
@@ -126,7 +124,7 @@ export function PromptInputBody({ children }: { children: ReactNode }) {
       }}
     >
       {children}
-    </BlurView>
+    </View>
   );
 }
 
@@ -154,8 +152,8 @@ export function PromptInputTextarea({
     <TextInput
       ref={inputRef}
       nativeID="composer"
-      cursorColorClassName="tint-foreground"
-      selectionColorClassName="tint-foreground"
+      cursorColorClassName="accent-foreground"
+      selectionColorClassName="accent-foreground"
       style={{ fontSize: 16 }}
       className="flex-1 pl-4 pr-2 py-3 text-foreground max-h-25"
       value={input}
@@ -172,33 +170,39 @@ export function PromptInputTextarea({
  * is generating. Reads state from `ChatContext`.
  */
 export function PromptInputSubmit() {
-  const { input, isGenerating, onSend } = useChatContext();
-  const disabled = !input.trim() || isGenerating;
+  const { canSend, input, isGenerating, onSend } = useChatContext();
+  const disabled = !input.trim() || !canSend;
+  const showSpinner = isGenerating && !canSend;
 
   return (
     <Pressable
-      style={({ pressed }) => ({
+      style={{
         width: 34,
         height: 34,
         borderRadius: 17,
         borderCurve: "continuous",
         justifyContent: "center",
         alignItems: "center",
-        opacity: pressed ? 0.7 : 1,
         margin: 5,
-      })}
-      className={disabled ? "bg-secondary" : "bg-foreground"}
+      }}
+      className={cn(
+        disabled ? "bg-secondary" : "bg-foreground",
+        "active:opacity-70",
+      )}
+      accessibilityRole="button"
+      accessibilityLabel="Send message"
       onPress={onSend}
       disabled={disabled}
     >
-      {isGenerating ? (
+      {showSpinner ? (
         <Animated.View entering={FadeIn} exiting={FadeOut}>
-          <ActivityIndicator size="small" colorClassName="tint-foreground" className="text-foreground" />
+          <ActivityIndicator size="small" colorClassName="accent-foreground" className="text-foreground" />
         </Animated.View>
       ) : (
           <SymbolImage
             name="arrow.up"
             size={16}
+            tintColor={disabled ? "#888888" : "#ffffff"}
             sfEffect="scale/up"
             className={cn(
               "font-semibold",

@@ -1,185 +1,72 @@
 import { useAgent } from "agents/react";
 import { useAgentChat } from "@cloudflare/ai-chat/react";
-import { useCallback } from "react";
-
-import { isAmbiguousPaymentError } from "@/payments/payment-errors";
-import {
-  loadPaymentAttempt,
-  parsePaymentAttemptRecord,
-  savePaymentAttempt,
-  type PaymentAttemptRecord,
-} from "@/payments/settlement-receipts";
-import { parseX402PaymentRequest } from "@/payments/x402-request";
+import { useRef, useState } from "react";
+import { payForResource } from "@/payments/pay-for-resource";
 import { useOptionalWallet } from "@/wallet/wallet-provider";
-
 import { useChatAdapter } from "./chat-adapter";
 import { createCloudflareChatConnection } from "./cloudflare-connection";
+import { getPaidRequest } from "./paid-request";
 
 export { isMockChatEnabled } from "./config";
-export {
-  CHAT_AGENT_NAME,
-  DEFAULT_CLOUDFLARE_AGENT_HOST,
-  createCloudflareChatConnection,
-} from "./cloudflare-connection";
+export { CHAT_AGENT_NAME, DEFAULT_CLOUDFLARE_AGENT_HOST, createCloudflareChatConnection } from "./cloudflare-connection";
 
-type CloudflareChatOptions = {
+export function useCloudflareChat({ conversationId, onBeforeSend }: {
   conversationId: string;
   onBeforeSend?: (text: string) => void;
-};
-
-export function useCloudflareChat({
-  conversationId,
-  onBeforeSend,
-}: CloudflareChatOptions) {
+}) {
   const agent = useAgent(createCloudflareChatConnection(conversationId));
-  const chat = useAgentChat({ agent, resume: true });
   const wallet = useOptionalWallet();
-  const canSettleOnThisPlatform = process.env.EXPO_OS === "android";
+  const chat = useAgentChat({ agent, resume: true });
+  const paying = useRef(false);
+  const [isPaying, setIsPaying] = useState(false);
 
-  const lookupPaymentAttempt = useCallback(async (toolCallId: string) => {
-    const local = await loadPaymentAttempt(toolCallId);
-    if (local) {
-      return local;
+  const sendMessage = async ({ text }: { text: string }) => {
+    chat.clearError();
+    const request = getPaidRequest(text);
+    if (!request) {
+      await chat.sendMessage({ text });
+      return;
     }
-
+    if (paying.current) return;
+    paying.current = true;
+    setIsPaying(true);
+    const id = `payment-${Date.now()}`;
+    chat.setMessages((messages) => [...messages, {
+      id: `${id}-user`, role: "user", parts: [{ type: "text", text }],
+    }]);
     try {
-      const remote = await agent.call("findX402Settlement", [toolCallId]);
-      const parsed = parseRemoteSettlement(remote);
-      if (parsed) {
-        await savePaymentAttempt(toolCallId, parsed);
-      }
-      return parsed;
-    } catch {
-      return null;
-    }
-  }, [agent]);
-
-  const settlePayment = useCallback(
-    async ({
-      request,
-      toolCallId,
-    }: {
-      request: unknown;
-      toolCallId: string;
-    }) => {
-      const parsed = parseX402PaymentRequest(request);
-      if (!parsed) {
-        throw new Error("Payment details could not be displayed safely.");
-      }
-
-      if (
-        wallet?.state.kind !== "ready" ||
-        !wallet.embeddedWalletAddress ||
-        !wallet.getEmbeddedSolanaProvider
-      ) {
-        throw new Error("The in-app wallet is not ready to pay.");
-      }
-
-      const provider = await wallet.getEmbeddedSolanaProvider();
-      if (!provider) {
-        throw new Error("The in-app wallet is not ready to pay.");
-      }
-
-      const [
-        { createPaidFetch, getSolanaRpcUrl },
-        { createPrivyKitSigner },
-        { settleApprovedPayment },
-      ] = await Promise.all([
-        import("@/payments/paid-fetch"),
-        import("@/payments/privy-kit-signer"),
-        import("@/payments/settle-approved-payment"),
-      ]);
-      const client = await createPaidFetch({
-        rpcUrl: getSolanaRpcUrl(),
-        signer: createPrivyKitSigner({
-          provider,
-          walletAddress: wallet.embeddedWalletAddress,
-        }),
+      if (!wallet?.getPaymentSigner) throw new Error("Connect your in-app wallet first.");
+      const response = await payForResource({ request, attemptId: id, getSigner: wallet.getPaymentSigner });
+      await chat.sendMessage({
+        messageId: `${id}-user`,
+        role: "user",
+        parts: [
+          { type: "text", text },
+          { type: "data-x402", data: { url: request.resourceUrl, body: response.paidBody, signature: response.signature } },
+        ],
       });
-
-      try {
-        const result = await settleApprovedPayment({
-          pay: (resourceUrl) => client.fetch(resourceUrl, undefined, "x402"),
-          request: parsed,
-        });
-        await savePaymentAttempt(toolCallId, {
-          kind: "settled",
-          paidBody: result.paidBody,
-          signature: result.signature,
-        });
-        return result;
-      } catch (error) {
-        if (isAmbiguousPaymentError(error)) {
-          await savePaymentAttempt(toolCallId, { kind: "unknown" });
-        }
-        throw error;
-      }
-    },
-    [wallet],
-  );
-
-  const recordSettlement = useCallback(
-    async ({
-      paidBody,
-      request,
-      signature,
-      toolCallId,
-    }: {
-      paidBody: string;
-      request: unknown;
-      signature: string;
-      toolCallId: string;
-    }) => {
-      const parsed = parseX402PaymentRequest(request);
-      if (!parsed) {
-        throw new Error("Payment details could not be displayed safely.");
-      }
-
-      await agent.call("recordX402Settlement", [
-        {
-          paidBody,
-          request: parsed,
-          signature,
-          toolCallId,
-        },
-      ]);
-    },
-    [agent],
-  );
+    } catch (error) {
+      chat.setMessages((messages) => [...messages, {
+        id: `${id}-error`, role: "assistant", parts: [{
+          type: "text", text: error instanceof Error ? error.message : "Payment failed.",
+        }],
+      }]);
+    } finally {
+      paying.current = false;
+      setIsPaying(false);
+    }
+  };
 
   return useChatAdapter({
     onBeforeSend,
     transport: {
-      addToolApprovalResponse: chat.addToolApprovalResponse,
       error: chat.error ?? chat.connectionError ?? agent.connectionError,
       isRecovering: chat.isRecovering,
-      isStreaming: chat.isStreaming,
-      lookupPaymentAttempt: canSettleOnThisPlatform
-        ? lookupPaymentAttempt
-        : undefined,
+      isStreaming: chat.isStreaming || isPaying,
       messages: chat.messages,
-      sendMessage: chat.sendMessage,
-      settlePayment: canSettleOnThisPlatform ? settlePayment : undefined,
-      recordSettlement: canSettleOnThisPlatform ? recordSettlement : undefined,
+      sendMessage,
       status: chat.status,
       stop: chat.stop,
     },
-  });
-}
-
-function parseRemoteSettlement(value: unknown): PaymentAttemptRecord | null {
-  if (typeof value !== "object" || value === null) {
-    return null;
-  }
-
-  const record = value as Record<string, unknown>;
-  if (record.status !== "settled") {
-    return null;
-  }
-
-  return parsePaymentAttemptRecord({
-    kind: "settled",
-    paidBody: typeof record.paidBody === "string" ? record.paidBody : "",
-    signature: record.signature,
   });
 }

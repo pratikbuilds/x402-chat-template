@@ -1,98 +1,59 @@
-import { AmbiguousPaymentError } from "./payment-errors";
-import { clearVerified402, queueVerified402 } from "./paid-fetch";
-import { attachPaymentRequiredHeader } from "./x402-fetch-compat";
-import {
-  matchApprovedChallenge,
-  parsePaymentRequiredHeader,
-  parsePaymentRequirement,
-  type X402PaymentRequest,
-} from "./x402-request";
+import { z } from "zod";
+import { AmbiguousPaymentError, PaymentRejectedError } from "./payment-errors";
+import type { PaymentQuote } from "./x402-request";
 
-export { AmbiguousPaymentError, isAmbiguousPaymentError } from "./payment-errors";
-
+export {
+  AmbiguousPaymentError,
+  isAmbiguousPaymentError,
+} from "./payment-errors";
 export const X402_PAID_BODY_MAX_CHARS = 16_384;
-
 export type SettleApprovedPaymentResult = {
   paidBody: string;
   signature: string;
 };
 
-export async function settleApprovedPayment(input: {
-  pay: (resourceUrl: string, verifiedResponse: Response) => Promise<Response>;
-  probe?: typeof fetch;
-  request: X402PaymentRequest;
-}): Promise<SettleApprovedPaymentResult> {
-  clearVerified402();
-  const probe = input.probe ?? globalThis.fetch.bind(globalThis);
-  const probeResponse = await probe(input.request.resourceUrl);
+const endpointErrorSchema = z.object({
+  error: z.string().optional(),
+  message: z.string().optional(),
+});
 
-  if (probeResponse.status !== 402) {
-    throw new Error("This URL did not require an x402 payment.");
-  }
-
-  const verifiedResponse = await attachPaymentRequiredHeader(probeResponse);
-  const challenge = await readPaymentChallenge(verifiedResponse);
-  const match = matchApprovedChallenge(input.request, challenge);
-
-  if (!match.ok) {
-    throw new Error(
-      `The 402 challenge did not match the approved ${match.reason}.`,
-    );
-  }
-
-  queueVerified402(input.request.resourceUrl, verifiedResponse);
+function describeEndpointResponse(body: string) {
   try {
-    const paidResponse = await input.pay(
-      input.request.resourceUrl,
-      verifiedResponse,
-    );
-    const signature = tryReadSettlementSignature(paidResponse);
-    const paidBody = await readPaidBody(paidResponse);
-
-    if (signature) {
-      return { paidBody, signature };
+    const result = endpointErrorSchema.safeParse(JSON.parse(body));
+    if (result.success) {
+      const detail = [result.data.error, result.data.message].filter(Boolean).join(": ");
+      if (detail) return detail.slice(0, 1000);
     }
-
-    if (!paidResponse.ok) {
-      throw new AmbiguousPaymentError(
-        `Payment retry failed with HTTP ${paidResponse.status}. Do not retry; the payment may already be on-chain.`,
-      );
-    }
-
-    throw new Error("Paid response did not include a settlement signature.");
-  } finally {
-    clearVerified402();
+  } catch {
+    // Some gateways return plain text or HTML errors.
   }
+  return body.slice(0, 1000);
 }
 
-async function readPaymentChallenge(response: Response) {
-  const header =
-    response.headers.get("PAYMENT-REQUIRED") ??
-    response.headers.get("payment-required");
-  if (header) {
-    const challenge = parsePaymentRequiredHeader(header);
-    if (challenge) {
-      return challenge;
-    }
-  }
-
-  const contentType = response.headers.get("content-type") ?? "";
-  if (contentType.includes("application/json")) {
-    const body: unknown = await response.clone().json();
-    if (
-      typeof body === "object" &&
-      body !== null &&
-      "accepts" in body &&
-      Array.isArray(body.accepts)
-    ) {
-      const challenge = parsePaymentRequirement(body.accepts[0]);
-      if (challenge) {
-        return challenge;
+export async function settleApprovedPayment(input: {
+  pay: () => Promise<Response>;
+  quote: PaymentQuote;
+}): Promise<SettleApprovedPaymentResult> {
+  const response = await input.pay();
+  const signature = tryReadSettlementSignature(response);
+  if (!signature) {
+    const body = await readPaidBody(response);
+    const detail = describeEndpointResponse(body);
+    if (response.status === 402) {
+      try {
+        const rejection = endpointErrorSchema.safeParse(JSON.parse(body));
+        if (rejection.success && rejection.data.error === "Payment Invalid" && rejection.data.message?.startsWith("Payment verification failed.")) {
+          throw new PaymentRejectedError(detail);
+        }
+      } catch (error) {
+        if (error instanceof PaymentRejectedError) throw error;
       }
     }
+    throw new AmbiguousPaymentError(
+      `Payment endpoint returned HTTP ${response.status} without settlement confirmation.${detail ? ` Response: ${detail}` : ""} Do not pay again.`,
+    );
   }
-
-  throw new Error("402 was missing a payment challenge.");
+  return { paidBody: await readPaidBody(response), signature };
 }
 
 export function readSettlementSignature(response: Response) {
@@ -123,20 +84,23 @@ function tryReadSettlementSignature(response: Response) {
   if (
     typeof parsed !== "object" ||
     parsed === null ||
-    typeof (parsed as { transaction?: unknown }).transaction !== "string" ||
-    (parsed as { transaction: string }).transaction.length === 0
+    !("success" in parsed) ||
+    parsed.success !== true ||
+    !("transaction" in parsed) ||
+    typeof parsed.transaction !== "string" ||
+    parsed.transaction.length === 0
   ) {
     return null;
   }
 
-  return (parsed as { transaction: string }).transaction;
+  return parsed.transaction;
 }
 
 async function readPaidBody(response: Response) {
   try {
     return (await response.text()).slice(0, X402_PAID_BODY_MAX_CHARS);
   } catch {
-    return "";
+    return "Paid, but the response body could not be read.";
   }
 }
 

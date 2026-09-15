@@ -77,9 +77,13 @@ Edit `global.css` to change the design tokens. Colors use OKLCH for perceptual u
 
 The template ships with mock streaming responses in `app/index.tsx`. Replace `mockStreamResponse` with your API integration -- the streaming architecture (`createStreamingStore` + throttled token callback) is ready for real LLM APIs.
 
-### x402 Payment Approvals
+### x402 calls
 
-The Cloudflare Agent exposes a `request_x402_payment` tool for exact Solana devnet USDC requests. The tool always pauses for a visible user approval, persists an approval record in the conversation Durable Object, and reports `not_submitted` until a later client-authorized signing and settlement flow is configured. It never holds a private key, signs, submits, retries, or claims that funds were sent.
+Send `Call https://your-x402-endpoint` or `Get the current paid BTC-USD bid and ask.` The app executes that request directly with the Privy in-app wallet and keeps the paid response in a collapsed “x402 call” dropdown. The model uses that data to answer in chat. There is no approval screen. Wallet & payments also has a direct BTC quote button. Other messages use the chat model.
+
+The demo accepts exact Solana mainnet USDC payments. Fund the in-app wallet, then ask: `Get a paid BTC-USD bid/ask snapshot`.
+
+Pay Kit 0.9 uses a request-scoped fetch so the payment stays bound to the endpoint challenge. Solana Kit 6.10 matches its token dependency; Expo Crypto supplies SHA-256 on native.
 
 ### Database
 

@@ -9,7 +9,7 @@ import {
   usePrivy,
 } from "@privy-io/expo";
 import {
-  createSolanaDevnet,
+  createSolanaMainnet,
   fromUint8Array,
   MobileWalletProvider,
   useMobileWallet,
@@ -25,17 +25,21 @@ import {
 } from "react";
 
 import {
+  createPrivyKitSigner,
   isPrivySolanaSignProvider,
-  type PrivySolanaSignProvider,
+  type PrivyKitSigner,
 } from "@/payments/privy-kit-signer";
 import { getSecureRandomnessError } from "@/polyfills";
 
 const MWA_IDENTITY = {
   name: "Chat",
-  uri: "x402-chat://wallet",
+  uri: "expo-kit-privy://wallet",
 } satisfies AppIdentity;
 
-const SOLANA_DEVNET = createSolanaDevnet();
+const SOLANA_MAINNET = createSolanaMainnet(
+  process.env.EXPO_PUBLIC_SOLANA_RPC_URL ??
+    "https://api.mainnet-beta.solana.com",
+);
 
 type WalletAction = "connect" | "sign-in" | "create" | "disconnect";
 
@@ -66,7 +70,7 @@ export function getWalletStatusText(state: WalletState) {
     case "error":
       return state.message;
     case "ready":
-      return "Your wallet is ready. Payments will always need approval.";
+      return "Your in-app wallet is ready for x402 calls.";
     default: {
       const _exhaustive: never = state;
       return _exhaustive;
@@ -77,7 +81,8 @@ export function getWalletStatusText(state: WalletState) {
 type WalletContextValue = Readonly<{
   embeddedWalletAddress: string | null;
   externalWalletAddress: string | null;
-  getEmbeddedSolanaProvider: (() => Promise<PrivySolanaSignProvider>) | null;
+  getPaymentSigner: (() => Promise<PrivyKitSigner>) | null;
+  paymentWalletAddress: string | null;
   state: WalletState;
   connectExternalWallet: () => Promise<void>;
   createEmbeddedWallet: () => Promise<void>;
@@ -91,7 +96,8 @@ const unavailableWalletValue = (message: string) =>
   ({
     embeddedWalletAddress: null,
     externalWalletAddress: null,
-    getEmbeddedSolanaProvider: null,
+    getPaymentSigner: null,
+    paymentWalletAddress: null,
     state: { kind: "unavailable", message },
     connectExternalWallet: doNothing,
     createEmbeddedWallet: doNothing,
@@ -153,7 +159,7 @@ function WalletConnectionProvider({ children }: { children: ReactNode }) {
       }
 
       const { message } = await generateMessage({
-        from: { domain: "x402-chat", uri: "x402-chat://privy-login" },
+        from: { domain: "expo-kit-privy", uri: "expo-kit-privy://privy-login" },
         wallet: { address: account.address.toString() },
       });
       const signature = fromUint8Array(
@@ -224,7 +230,7 @@ function WalletConnectionProvider({ children }: { children: ReactNode }) {
     user,
   ]);
 
-  const getEmbeddedSolanaProvider = useMemo(() => {
+  const getPaymentSigner = useMemo(() => {
     if (state.kind !== "ready" || !embeddedWallet) {
       return null;
     }
@@ -235,7 +241,11 @@ function WalletConnectionProvider({ children }: { children: ReactNode }) {
       if (!isPrivySolanaSignProvider(provider)) {
         throw new Error("The in-app wallet is not ready to pay.");
       }
-      return provider;
+
+      return createPrivyKitSigner({
+        provider,
+        walletAddress: wallet.address,
+      });
     };
   }, [embeddedWallet, state.kind]);
 
@@ -243,7 +253,8 @@ function WalletConnectionProvider({ children }: { children: ReactNode }) {
     () => ({
       embeddedWalletAddress,
       externalWalletAddress,
-      getEmbeddedSolanaProvider,
+      getPaymentSigner,
+      paymentWalletAddress: embeddedWalletAddress,
       state,
       connectExternalWallet,
       createEmbeddedWallet,
@@ -256,7 +267,7 @@ function WalletConnectionProvider({ children }: { children: ReactNode }) {
       disconnectWallets,
       embeddedWalletAddress,
       externalWalletAddress,
-      getEmbeddedSolanaProvider,
+      getPaymentSigner,
       signInWithSolana,
       state,
     ],
@@ -294,7 +305,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       clientId={clientId}
       config={{ embedded: { solana: { createOnLogin: "all-users" } } }}
     >
-      <MobileWalletProvider cluster={SOLANA_DEVNET} identity={MWA_IDENTITY}>
+      <MobileWalletProvider cluster={SOLANA_MAINNET} identity={MWA_IDENTITY}>
         <WalletConnectionProvider>{children}</WalletConnectionProvider>
       </MobileWalletProvider>
     </PrivyProvider>

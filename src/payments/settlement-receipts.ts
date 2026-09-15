@@ -9,7 +9,8 @@ type ReceiptStorage = {
 
 export type PaymentAttemptRecord =
   | { kind: "settled"; paidBody: string; signature: string }
-  | { kind: "unknown" };
+  | { kind: "unknown" }
+  | { kind: "rejected" };
 
 export function settlementReceiptStorageKey(toolCallId: string) {
   return `${RECEIPT_STORAGE_PREFIX}${toolCallId}`;
@@ -50,8 +51,8 @@ export function parsePaymentAttemptRecord(
   }
 
   const record = value as Record<string, unknown>;
-  if (record.kind === "unknown") {
-    return { kind: "unknown" };
+  if (record.kind === "unknown" || record.kind === "rejected") {
+    return { kind: record.kind };
   }
 
   if (
@@ -68,4 +69,24 @@ export function parsePaymentAttemptRecord(
   }
 
   return null;
+}
+
+export function paymentResourceKey(wallet: string, url: string) {
+  return `resource:${JSON.stringify([wallet, new URL(url).href])}`;
+}
+
+export async function assertPaymentResourceAvailable(
+  wallet: string,
+  url: string,
+  storage: ReceiptStorage = AsyncStorage,
+) {
+  const key = paymentResourceKey(wallet, url);
+  const stored = await storage.getItem(settlementReceiptStorageKey(key));
+  if (stored !== null) {
+    const record = parsePaymentAttemptRecord(JSON.parse(stored));
+    if (!record || record.kind === "unknown") {
+      throw new Error("A previous payment to this endpoint is unconfirmed. Check its settlement before paying again.");
+    }
+  }
+  return key;
 }

@@ -1,162 +1,88 @@
-export const SOLANA_DEVNET_USDC_MINT =
-  "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
+import { z } from "zod";
 
-export type X402PaymentRequest = {
-  amountAtomic: string;
-  asset: "USDC";
-  network: "solana:devnet";
-  reason: string;
-  recipient: string;
-  resourceUrl: string;
-};
+export const SOLANA_MAINNET_NETWORK =
+  "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
+export const SOLANA_MAINNET_USDC_MINT =
+  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 
-export function parseX402PaymentRequest(
-  input: unknown,
-): X402PaymentRequest | null {
-  if (typeof input !== "object" || input === null) {
-    return null;
-  }
+export const X402PaymentRequestSchema = z.object({
+  resourceUrl: z.url().refine((value) => new URL(value).protocol === "https:"),
+  reason: z.string().trim().min(1).max(280),
+});
 
-  const record = input as Record<string, unknown>;
-  if (
-    typeof record.amountAtomic !== "string" ||
-    record.asset !== "USDC" ||
-    record.network !== "solana:devnet" ||
-    typeof record.reason !== "string" ||
-    typeof record.recipient !== "string" ||
-    typeof record.resourceUrl !== "string"
-  ) {
-    return null;
-  }
+export type X402PaymentRequest = z.infer<typeof X402PaymentRequestSchema>;
 
-  if (!/^[1-9]\d*$/.test(record.amountAtomic)) {
-    return null;
-  }
-
-  if (record.reason.trim().length === 0 || record.reason.length > 280) {
-    return null;
-  }
-
-  if (record.recipient.length === 0 || record.recipient.length > 128) {
-    return null;
-  }
-
-  try {
-    if (new URL(record.resourceUrl).protocol !== "https:") {
-      return null;
-    }
-  } catch {
-    return null;
-  }
-
-  return {
-    amountAtomic: record.amountAtomic,
-    asset: "USDC",
-    network: "solana:devnet",
-    reason: record.reason,
-    recipient: record.recipient,
-    resourceUrl: record.resourceUrl,
-  };
+export function parseX402PaymentRequest(input: unknown) {
+  const result = X402PaymentRequestSchema.safeParse(input);
+  return result.success ? result.data : null;
 }
 
-export type X402PaymentChallenge = {
-  amountAtomic: string;
-  asset: string;
-  network: string;
-  recipient: string;
-};
+const mainnetRequirementSchema = z
+  .object({
+    scheme: z.literal("exact"),
+    network: z.literal(SOLANA_MAINNET_NETWORK),
+    amount: z.string().regex(/^[1-9]\d*$/),
+    asset: z.literal(SOLANA_MAINNET_USDC_MINT),
+    payTo: z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/),
+    maxTimeoutSeconds: z.number().int().positive(),
+    extra: z
+      .object({ feePayer: z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/) })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+const paymentRequiredSchema = z
+  .object({
+    x402Version: z.literal(2),
+    accepts: z.array(z.unknown()).nonempty(),
+    resource: z.object({ url: z.url() }).passthrough(),
+  })
+  .passthrough();
 
-export function parsePaymentRequiredHeader(
-  header: string,
-): X402PaymentChallenge | null {
-  let parsed: unknown;
+export type PaymentQuote = Awaited<ReturnType<typeof preparePayment>>;
 
-  try {
-    parsed = JSON.parse(decodeBase64Utf8(header));
-  } catch {
-    return null;
-  }
-
-  if (typeof parsed !== "object" || parsed === null) {
-    return null;
-  }
-
-  const accepts = (parsed as { accepts?: unknown }).accepts;
-  if (!Array.isArray(accepts) || accepts.length === 0) {
-    return null;
-  }
-
-  return parsePaymentRequirement(accepts[0]);
-}
-
-export function parsePaymentRequirement(
-  requirement: unknown,
-): X402PaymentChallenge | null {
-  if (typeof requirement !== "object" || requirement === null) {
-    return null;
-  }
-
-  const record = requirement as Record<string, unknown>;
-  const amountAtomic =
-    typeof record.amount === "string"
-      ? record.amount
-      : typeof record.maxAmountRequired === "string"
-        ? record.maxAmountRequired
-        : null;
-
-  if (
-    amountAtomic === null ||
-    typeof record.asset !== "string" ||
-    typeof record.network !== "string" ||
-    typeof record.payTo !== "string"
-  ) {
-    return null;
-  }
-
-  return {
-    amountAtomic,
-    asset: record.asset,
-    network: record.network,
-    recipient: record.payTo,
-  };
-}
-
-export function normalizeX402Network(network: string) {
-  switch (network) {
-    case "solana:devnet":
-    case "solana-devnet":
-    case "devnet":
-      return "solana:devnet";
-    default:
-      return network;
-  }
-}
-
-export function matchApprovedChallenge(
+export async function preparePayment(
   request: X402PaymentRequest,
-  challenge: X402PaymentChallenge,
+  signal?: AbortSignal,
 ) {
-  if (normalizeX402Network(challenge.network) !== request.network) {
-    return { ok: false as const, reason: "network" };
+  const response = await fetch(request.resourceUrl, { signal });
+  if (response.status !== 402)
+    throw new Error("This URL did not require an x402 payment.");
+  const header = response.headers.get("payment-required");
+  const body: unknown = header
+    ? JSON.parse(
+        new TextDecoder().decode(
+          Uint8Array.from(atob(header), (char) => char.charCodeAt(0)),
+        ),
+      )
+    : await response.json();
+  if (
+    typeof body !== "object" ||
+    body === null ||
+    (body as { x402Version?: unknown }).x402Version !== 2
+  ) {
+    throw new Error("This demo supports x402 v2 payments only.");
   }
-
-  if (challenge.recipient !== request.recipient) {
-    return { ok: false as const, reason: "recipient" };
+  const parsed = paymentRequiredSchema.safeParse(body);
+  if (!parsed.success) throw new Error("Invalid x402 payment challenge.");
+  const required = parsed.data;
+  if (required.resource.url !== request.resourceUrl) {
+    throw new Error("Payment challenge belongs to another URL.");
   }
-
-  if (challenge.amountAtomic !== request.amountAtomic) {
-    return { ok: false as const, reason: "amount" };
+  const selected = required.accepts
+    .map((requirement) => mainnetRequirementSchema.safeParse(requirement))
+    .find((result) => result.success)?.data;
+  if (!selected) {
+    throw new Error(
+      "This demo supports exact Solana mainnet USDC payments only.",
+    );
   }
-
-  if (challenge.asset !== SOLANA_DEVNET_USDC_MINT) {
-    return { ok: false as const, reason: "asset" };
-  }
-
-  return { ok: true as const };
-}
-
-function decodeBase64Utf8(value: string) {
-  const binary = globalThis.atob(value);
-  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-  return new TextDecoder().decode(bytes);
+  // Sign only the option shown in the approval card.
+  const paymentRequired = { ...required, accepts: [selected] };
+  return {
+    request,
+    amountAtomic: selected.amount,
+    recipient: selected.payTo,
+    paymentRequired,
+  };
 }
