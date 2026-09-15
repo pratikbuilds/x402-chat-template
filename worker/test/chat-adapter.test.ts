@@ -68,3 +68,16 @@ describe("Cloudflare chat adapter", () => {
     );
   });
 });
+
+it("keeps raw payment data out of visible message text", () => {
+  const data = { url: "https://example.com", body: '{"bid":100}', signature: "receipt" };
+  expect(projectChatMessages([{
+    id: "paid", role: "user", parts: [
+      { type: "text", text: "Call this endpoint" },
+      { type: "data-x402", data },
+    ],
+  }], false)).toEqual([
+    { id: "paid", role: "user", content: "Call this endpoint" },
+    { id: "paid-x402", role: "assistant", content: "", x402: data },
+  ]);
+});

@@ -72,9 +72,6 @@ export default function SettingsLayout() {
         name="wallet-payments"
         options={{
           title: "Wallet & payments",
-          presentation: "formSheet",
-          sheetAllowedDetents: "fitToContents",
-          sheetGrabberVisible: true,
         }}
       />
     </Stack>

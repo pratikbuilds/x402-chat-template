@@ -1,3 +1,4 @@
+import { useOptionalWallet } from "@/wallet/wallet-provider";
 import type { ChatAdapter } from "@/chat/chat-adapter";
 import { useCloudflareChat } from "@/chat/cloudflare-chat";
 import { useConversationId } from "@/chat/conversation-id";
@@ -8,8 +9,7 @@ import { ActivityIndicator, View } from "react-native";
 
 function createErrorChatAdapter(error: Error): ChatAdapter {
   return {
-    approvePayment: () => {},
-    approvals: [],
+    canSend: false,
     messages: [],
     input: "",
     setInput: () => {},
@@ -24,8 +24,7 @@ function createErrorChatAdapter(error: Error): ChatAdapter {
 
 function createLoadingChatAdapter(): ChatAdapter {
   return {
-    approvePayment: () => {},
-    approvals: [],
+    canSend: false,
     messages: [],
     input: "",
     setInput: () => {},
@@ -73,9 +72,10 @@ export function CloudflareChatScreen({
   render: (chat: ChatAdapter) => ReactNode;
 }) {
   const conversationId = useConversationId();
+  const wallet = useOptionalWallet();
   const loadingAdapter = useMemo(() => createLoadingChatAdapter(), []);
 
-  if (!conversationId) {
+  if (!conversationId || wallet?.state.kind === "loading") {
     return (
       <>
         {render(loadingAdapter)}

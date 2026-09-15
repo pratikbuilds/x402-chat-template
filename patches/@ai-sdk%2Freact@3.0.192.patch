@@ -1,0 +1,65 @@
+diff --git a/dist/index.js b/dist/index.js
+index c9f2fdf5d8ff99b50f66ed7d3a381836af81ca6b..c0570b5bca3d7450a5571d28e43d3674258c04e4 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -115,13 +115,13 @@ var ReactChatState = class {
+       };
+     };
+     __privateAdd(this, _callMessagesCallbacks, () => {
+-      __privateGet(this, _messagesCallbacks).forEach((callback) => callback());
++      [...__privateGet(this, _messagesCallbacks)].forEach((callback) => callback());
+     });
+     __privateAdd(this, _callStatusCallbacks, () => {
+-      __privateGet(this, _statusCallbacks).forEach((callback) => callback());
++      [...__privateGet(this, _statusCallbacks)].forEach((callback) => callback());
+     });
+     __privateAdd(this, _callErrorCallbacks, () => {
+-      __privateGet(this, _errorCallbacks).forEach((callback) => callback());
++      [...__privateGet(this, _errorCallbacks)].forEach((callback) => callback());
+     });
+     __privateSet(this, _messages, initialMessages);
+   }
+diff --git a/dist/index.mjs b/dist/index.mjs
+index 708310cf6da231725070b9fab4fb38d074ecec86..2b3ba974dc590bf03bb5b5444732318a1785f72c 100644
+--- a/dist/index.mjs
++++ b/dist/index.mjs
+@@ -79,13 +79,13 @@ var ReactChatState = class {
+       };
+     };
+     __privateAdd(this, _callMessagesCallbacks, () => {
+-      __privateGet(this, _messagesCallbacks).forEach((callback) => callback());
++      [...__privateGet(this, _messagesCallbacks)].forEach((callback) => callback());
+     });
+     __privateAdd(this, _callStatusCallbacks, () => {
+-      __privateGet(this, _statusCallbacks).forEach((callback) => callback());
++      [...__privateGet(this, _statusCallbacks)].forEach((callback) => callback());
+     });
+     __privateAdd(this, _callErrorCallbacks, () => {
+-      __privateGet(this, _errorCallbacks).forEach((callback) => callback());
++      [...__privateGet(this, _errorCallbacks)].forEach((callback) => callback());
+     });
+     __privateSet(this, _messages, initialMessages);
+   }
+diff --git a/src/chat.react.ts b/src/chat.react.ts
+index f99217beccc682c9744ae91f384d334d829e1334..62c7ae5fde46e535cda5d5f77b0dc1db2c9f0032 100644
+--- a/src/chat.react.ts
++++ b/src/chat.react.ts
+@@ -99,15 +99,15 @@ class ReactChatState<
+   };
+ 
+   #callMessagesCallbacks = () => {
+-    this.#messagesCallbacks.forEach(callback => callback());
++    [...this.#messagesCallbacks].forEach(callback => callback());
+   };
+ 
+   #callStatusCallbacks = () => {
+-    this.#statusCallbacks.forEach(callback => callback());
++    [...this.#statusCallbacks].forEach(callback => callback());
+   };
+ 
+   #callErrorCallbacks = () => {
+-    this.#errorCallbacks.forEach(callback => callback());
++    [...this.#errorCallbacks].forEach(callback => callback());
+   };
+ }
+ 

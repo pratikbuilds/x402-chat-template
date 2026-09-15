@@ -3,6 +3,7 @@ import type { StreamingStore } from "./streaming-store";
 import type { ChatMessage } from "./types";
 
 export type ChatContextValue = {
+  canSend: boolean;
   messages: ChatMessage[];
   input: string;
   setInput: (value: string) => void;
