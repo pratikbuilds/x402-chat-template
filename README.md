@@ -1,100 +1,87 @@
-# Chat Template
+# x402 Chat
 
-https://github.com/user-attachments/assets/864ca10c-be94-4c45-8e98-a71bff7a0042
+Android chat app with a [Cloudflare Agent](https://developers.cloudflare.com/agents/) that can pay for HTTPS APIs on Solana.
 
-A high-performance AI chatbot template built with [Expo](https://expo.dev) and [Expo Router](https://docs.expo.dev/router/introduction/). Ships with iOS 26 Liquid Glass support, a responsive web UI, and runs on iOS, Android, and web from a single codebase.
+You send a message. The agent lives on a Cloudflare Worker (a Durable Object). If it needs data from an [x402](https://www.x402.org/) endpoint, the phone pays that request with [Pay Kit](https://www.npmjs.com/package/@solana/pay-kit) and a Privy in-app Solana wallet, then the agent answers from the paid response.
 
-## Features
+**Android only.** Sign-in uses Solana Mobile Wallet Adapter, which does not run on iOS or web. You need a custom Expo development build, not Expo Go.
 
-- **Liquid Glass** -- glassmorphic prompt composer, navigation bars, and toolbar buttons on iOS 26 via `expo-glass-effect`
-- **Web-first sidebar** -- collapsible sidebar with Radix context menus, dropdown menus, and tooltips for a desktop-grade web experience
-- **Streaming messages** with throttled ~30fps updates, markdown rendering (code blocks, tables, inline formatting), and shimmer loading states
-- **Platform-adaptive layouts** -- native gesture-driven drawer on iOS/Android, sidebar + inset content panel on web
-- **Dark mode** -- automatic light/dark theme using OKLCH design tokens in Tailwind CSS v4
-- **Native UI controls** -- SwiftUI model picker menu, toolbar buttons, and haptic feedback on iOS
-- **Keyboard-aware** -- prompt input stays above the keyboard with `react-native-keyboard-controller`
-- **Virtualized chat** -- performant scrolling with `@legendapp/list` and Reanimated-powered scroll-to-bottom button
+## What it does
 
-## Tech Stack
+When you ask for something behind a paid URL, the agent calls `request_x402_payment`. The app:
 
-| Layer      | Technology                                                                                                              |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Framework  | Expo SDK 55, React Native 0.83, React 19                                                                                |
-| Navigation | Expo Router (file-based) with typed routes, [Legend List](https://legendapp.com/open-source/list/) for virtualized chat |
-| Styling    | Tailwind CSS v4 via [Uniwind](https://uniwind.dev/) + `tailwind-merge`                                                  |
-| Native UI  | `@expo/ui` (SwiftUI), `expo-symbols`, `expo-haptics`, `expo-glass-effect`                                               |
-| Web UI     | Radix UI (context menu, dropdown menu, tooltips), Lucide icons                                                          |
-| Markdown   | Custom AST renderer with `mdast-util-from-markdown` + `react-syntax-highlighter`                                        |
-| Animations | `react-native-reanimated`, `react-native-gesture-handler`                                                               |
+1. Signs the payment with the Privy in-app Solana wallet
+2. Lets Pay Kit handle the HTTP 402, settle USDC on Solana mainnet, and retry the request
+3. Sends the paid body and Solana transaction signature back to the agent
+4. Shows the call as a collapsed **x402** row in chat
 
-## Getting Started
+There is no approval screen. If the in-app wallet is funded and ready, the payment goes through. Try `Get a paid BTC-USD bid/ask snapshot` or `Call https://your-x402-endpoint`. Endpoints must be HTTPS. GET is the default; POST is only used when the endpoint needs a JSON body.
 
-### Environment Variables
+## Wallets
 
-Copy `.env.example` to `.env` and fill in the values:
+Two wallets, two jobs.
 
-```bash
-cp .env.example .env
+| Wallet | Library | Job |
+| --- | --- | --- |
+| Sign-in | [Solana Mobile Wallet Adapter](https://docs.solanamobile.com/mobile-wallet-adapter/overview) via [`@wallet-ui/react-native-kit`](https://www.npmjs.com/package/@wallet-ui/react-native-kit) | Connect Phantom, Solflare, or another MWA wallet on the phone. Sign in to Privy with Solana. |
+| In-app | [Privy](https://docs.privy.io/guide/expo) embedded Solana wallet | Pays x402 calls. This is the wallet Pay Kit signs with. |
+
+Connect the sign-in wallet, sign in, then create or recover the Privy in-app wallet. Fund the in-app wallet with SOL for fees and USDC on Solana mainnet for x402. The sign-in wallet never pays.
+
+## How it fits together
+
+```
+Android app  --chat-->  Cloudflare Worker (ChatAgent Durable Object)
+     ^                              |
+     |                              |  request_x402_payment
+     |                              v
+     +-- Pay Kit (x402) -------- HTTPS resource
+            Privy in-app wallet signs
+            USDC on Solana mainnet
 ```
 
-| Variable              | Description                                                                                                                                                    |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ANTHROPIC_API_KEY`   | Your [Anthropic API key](https://console.anthropic.com/settings/keys). Used by the server-side chat API route (`app/api/chat+api.ts`) via `@ai-sdk/anthropic`. |
-| `EXPO_PUBLIC_MOCK_AI` | Set to `1` to use mock streaming responses instead of calling the Anthropic API. Useful for UI development without an API key.                                 |
+- Agent: [`agents`](https://www.npmjs.com/package/agents) and [`@cloudflare/ai-chat`](https://www.npmjs.com/package/@cloudflare/ai-chat)
+- Payments: [`@solana/pay-kit`](https://www.npmjs.com/package/@solana/pay-kit) and [`@solana/kit`](https://www.npmjs.com/package/@solana/kit)
+- Model: Anthropic Claude Haiku when `ANTHROPIC_API_KEY` is set, otherwise Cloudflare Workers AI (`@cf/zai-org/glm-4.7-flash`)
 
-### Install & Run
+## Requirements
+
+- [Bun](https://bun.sh)
+- Android Studio and an Android device or emulator
+- A Solana wallet app on that device that supports Mobile Wallet Adapter
+- A [Privy](https://dashboard.privy.io) app with Expo and embedded Solana wallets enabled
+- Optional: an [Anthropic API key](https://console.anthropic.com/settings/keys)
+
+## Setup
 
 ```bash
-# Install dependencies
 bun install
+cp .env.example .env
+cp worker/.dev.vars.example worker/.dev.vars
+```
 
-# Start the dev server
-bun start
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `EXPO_PUBLIC_CLOUDFLARE_AGENT_HOST` | Yes | Worker URL. Local default is `http://127.0.0.1:8787`. |
+| `EXPO_PUBLIC_PRIVY_APP_ID` | Yes | Privy app id. |
+| `EXPO_PUBLIC_PRIVY_CLIENT_ID` | Yes | Privy Expo client id. |
+| `EXPO_PUBLIC_SOLANA_RPC_URL` | Yes | Solana mainnet RPC. |
+| `ANTHROPIC_API_KEY` | Recommended | Chat model. Copy the same value into `worker/.dev.vars`. |
+| `EXPO_PUBLIC_MOCK_AI` | No | Set to `1` to stream mock replies and skip the Worker. |
 
-# Run on a specific platform
-bun run ios
+```bash
+bun run worker:dev
 bun run android
-bun run web
 ```
 
-> Requires [Bun](https://bun.sh) and the [Expo CLI](https://docs.expo.dev/get-started/installation/). For iOS, you'll need Xcode and a simulator or device.
+The Worker lives in `worker/`. Chat does not stream until the app can reach `EXPO_PUBLIC_CLOUDFLARE_AGENT_HOST`.
 
-## Customization
+First run: **Settings → Wallet** → connect a Solana wallet → sign in → create or initialize the in-app wallet → fund it → ask for a paid URL.
 
-### Theme
+## Stack
 
-Edit `global.css` to change the design tokens. Colors use OKLCH for perceptual uniformity across light and dark modes. The `@theme` block maps CSS variables to Tailwind classes:
+Expo SDK 56, React Native, Expo Router. Cloudflare Workers and Durable Objects for the agent. Solana Mobile Wallet Adapter and Privy for wallets. Pay Kit for x402 on Solana mainnet.
 
-```css
---app-background  ->  bg-background
---app-foreground  ->  text-foreground
---app-muted       ->  bg-muted
---app-border      ->  border-border
-/* etc. */
-```
+## Attribution
 
-### Chat Backend
-
-The template ships with mock streaming responses in `app/index.tsx`. Replace `mockStreamResponse` with your API integration -- the streaming architecture (`createStreamingStore` + throttled token callback) is ready for real LLM APIs.
-
-### x402 calls
-
-Send `Call https://your-x402-endpoint` or `Get the current paid BTC-USD bid and ask.` The app executes that request directly with the Privy in-app wallet and keeps the paid response in a collapsed “x402 call” dropdown. The model uses that data to answer in chat. There is no approval screen. Other messages use the chat model.
-
-Pay Kit handles the endpoint's 402 response and retries the request with a payment signed by the Privy in-app wallet. After settlement, the app stores the response and transaction signature. Fund the in-app wallet, then ask: `Get a paid BTC-USD bid/ask snapshot`.
-
-Solana Kit 6.10 matches Pay Kit's token dependency; Expo Crypto supplies SHA-256 on native.
-
-### Database
-
-I recommend using Convex, which you can setup in a single command:
-
-```
-npx eas-cli@latest integrations:convex:connect
-```
-
-Pair this with [better-auth](https://labs.convex.dev/better-auth/framework-guides/expo) for authentication. Convex also has support for Expo Notifications: [Learn more](https://www.convex.dev/components/push-notifications).
-
-## License
-
-This template was made for https://agent.expo.dev and is made freely available under the MIT license.
+Fork of [EvanBacon/chat-template](https://github.com/EvanBacon/chat-template) (MIT). That template is the chat UI this app started from.
