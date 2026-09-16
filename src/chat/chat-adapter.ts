@@ -48,9 +48,23 @@ export function projectChatMessages(
       index === messages.length - 1;
 
     const results: ChatMessage[] = message.parts.flatMap((part) => {
-      if (part.type !== "data-x402") return [];
-      const parsed = X402ChatResultSchema.safeParse(part.data);
-      return parsed.success ? [{ id: `${message.id}-x402`, role: "assistant", content: "", x402: parsed.data }] : [];
+      if (part.type === "data-x402") {
+        const parsed = X402ChatResultSchema.safeParse(part.data);
+        return parsed.success
+          ? [{ id: `${message.id}-x402`, role: "assistant", content: "", x402: parsed.data }]
+          : [];
+      }
+      if (
+        part.type === "tool-request_x402_payment" &&
+        part.state === "output-error"
+      ) {
+        return [{
+          id: `${message.id}-${part.toolCallId}-error`,
+          role: "assistant",
+          content: `x402 call failed: ${part.errorText ?? "The payment request could not be completed."}`,
+        }];
+      }
+      return [];
     });
     const text = getTextFromParts(message.parts);
     if (!text && !isActiveAssistantMessage) return results;

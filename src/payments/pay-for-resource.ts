@@ -15,8 +15,17 @@ export async function payForResource(input: {
     rpcUrl: getSolanaRpcUrl(),
     signer,
   });
+  const requestInit = request.method === "POST"
+    ? {
+      method: "POST",
+      headers: request.body === undefined
+        ? undefined
+        : { "Content-Type": "application/json" },
+      body: request.body === undefined ? undefined : JSON.stringify(request.body),
+    }
+    : undefined;
   const result = await readSettledPayment({
-    pay: () => client.fetch(request.resourceUrl, undefined, "x402"),
+    pay: () => client.fetch(request.resourceUrl, requestInit, "x402"),
   });
 
   await savePaymentReceipt(input.attemptId, {

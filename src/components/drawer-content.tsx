@@ -93,9 +93,11 @@ function DrawerChatItem({
 
 export function DrawerContent({
   onNavigate,
+  onNewChat,
   onOpenModal,
 }: {
   onNavigate: (path: Href) => void;
+  onNewChat: () => void;
   onOpenModal: (path: Href) => void;
 }) {
   return (
@@ -161,7 +163,7 @@ export function DrawerContent({
         </TouchableGlass>
         <View className="flex-1" />
         <TouchableGlass
-          onPress={() => onNavigate("/")}
+          onPress={onNewChat}
           className="w-10 h-10 rounded-full bg-foreground active:bg-muted items-center justify-center"
         >
           <Icon

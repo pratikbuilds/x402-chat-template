@@ -36,6 +36,86 @@ it("omits abandoned payment approvals while preserving completed payment results
 });
 
 describe("streamChatTurn", () => {
+  it("offers the wallet-backed x402 request tool to the model", async () => {
+    let toolNames: string[] = [];
+    const model = new MockLanguageModelV4({
+      doStream: async ({ tools }) => {
+        toolNames = Array.isArray(tools)
+          ? tools.map((tool) => tool.name)
+          : Object.keys(tools ?? {});
+        return {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              { type: "text-start", id: "response" },
+              { type: "text-delta", id: "response", delta: "Ready" },
+              { type: "text-end", id: "response" },
+              {
+                type: "finish",
+                finishReason: { unified: "stop", raw: "stop" },
+                usage: {
+                  inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+                  outputTokens: { total: 1, text: 1, reasoning: undefined },
+                },
+              },
+            ],
+          }),
+        };
+      },
+    });
+
+    const response = streamChatTurn({
+      env: { AI: {} as Ai },
+      messages: [{ role: "user", content: "Fetch the paid endpoint." }],
+      model,
+    });
+
+    await response.text();
+
+    expect(toolNames).toContain("request_x402_payment");
+  });
+
+  it("emits an x402 tool request for client-side wallet handling", async () => {
+    const model = new MockLanguageModelV4({
+      doStream: async () => ({
+        stream: simulateReadableStream({
+          chunks: [
+            { type: "stream-start", warnings: [] },
+            {
+              type: "tool-call",
+              toolCallId: "x402-call",
+              toolName: "request_x402_payment",
+              input: JSON.stringify({
+                resourceUrl: "https://provider.example/trending",
+                reason: "Get trending data",
+              }),
+            },
+            {
+              type: "finish",
+              finishReason: { unified: "tool-calls", raw: "tool_calls" },
+              usage: {
+                inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+                outputTokens: { total: 1, text: 0, reasoning: undefined },
+              },
+            },
+          ],
+        }),
+      }),
+    });
+
+    const response = streamChatTurn({
+      env: { AI: {} as Ai },
+      messages: [{ role: "user", content: "Get live trending data." }],
+      model,
+    });
+
+    const stream = await response.text();
+
+    expect(stream).toContain("tool-input-available");
+    expect(stream).toContain("request_x402_payment");
+    expect(stream).toContain("x402-call");
+  });
+
   it("passes the Agent abort signal to the model stream", async () => {
     const controller = new AbortController();
     let receivedAbortSignal: AbortSignal | undefined;

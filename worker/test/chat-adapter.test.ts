@@ -44,10 +44,42 @@ describe("Cloudflare chat adapter", () => {
     ]);
   });
 
+  it("shows a failed x402 tool call instead of dropping it from the chat", () => {
+    const messages = [{
+      id: "assistant-payment-error",
+      role: "assistant" as const,
+      parts: [{
+        type: "tool-request_x402_payment" as const,
+        toolCallId: "payment-call",
+        toolName: "request_x402_payment",
+        state: "output-error" as const,
+        input: {
+          resourceUrl: "https://provider.example/quote",
+          reason: "Get a quote",
+        },
+        errorText: "Payment endpoint returned HTTP 502 without settlement confirmation.",
+      }],
+    }];
+
+    expect(projectChatMessages(messages, false)).toEqual([
+      {
+        id: "assistant-payment-error-payment-call-error",
+        role: "assistant",
+        content: "x402 call failed: Payment endpoint returned HTTP 502 without settlement confirmation.",
+      },
+    ]);
+  });
+
   it("reuses the conversation instance for reconnects", () => {
     const conversationId = "conversation-durable-123";
-    const initialConnection = createCloudflareChatConnection(conversationId);
-    const reconnectedConnection = createCloudflareChatConnection(conversationId);
+    const initialConnection = createCloudflareChatConnection(
+      conversationId,
+      DEFAULT_CLOUDFLARE_AGENT_HOST,
+    );
+    const reconnectedConnection = createCloudflareChatConnection(
+      conversationId,
+      DEFAULT_CLOUDFLARE_AGENT_HOST,
+    );
 
     expect(initialConnection).toEqual({
       agent: CHAT_AGENT_NAME,

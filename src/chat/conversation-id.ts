@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 
 const CONVERSATION_ID_STORAGE_KEY = "@chat/conversation-id";
@@ -33,11 +34,27 @@ export async function getOrCreateConversationId(
 
 export function useConversationId() {
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const { conversationId: requestedConversationId } =
+    useLocalSearchParams<{ conversationId?: string }>();
 
   useEffect(() => {
     let isMounted = true;
+    setConversationId(null);
 
-    getOrCreateConversationId()
+    const nextConversationId = isConversationId(requestedConversationId)
+      ? Promise.resolve(requestedConversationId)
+      : getOrCreateConversationId();
+
+    nextConversationId
+      .then(async (nextConversationId) => {
+        if (isConversationId(requestedConversationId)) {
+          await AsyncStorage.setItem(
+            CONVERSATION_ID_STORAGE_KEY,
+            requestedConversationId,
+          );
+        }
+        return nextConversationId;
+      })
       .then((nextConversationId) => {
         if (isMounted) {
           setConversationId(nextConversationId);
@@ -52,7 +69,7 @@ export function useConversationId() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [requestedConversationId]);
 
   return conversationId;
 }

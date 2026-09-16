@@ -5,6 +5,7 @@ import {
   useDrawer,
 } from "@/components/drawer-content";
 import { DrawerLayout } from "@/components/drawer-layout";
+import { createConversationId } from "@/chat/conversation-id";
 import "@/global.css";
 import { useSystemBackgroundColor } from "@/utils/use-system-background-color";
 import { isLiquidGlassAvailable } from "expo-glass-effect";
@@ -99,6 +100,13 @@ function RootDrawer() {
           onNavigate={(path) => {
             closeDrawer();
             router.replace(path, { withAnchor: true });
+          }}
+          onNewChat={() => {
+            closeDrawer();
+            router.replace({
+              pathname: "/",
+              params: { conversationId: createConversationId() },
+            });
           }}
           onOpenModal={(path) => {
             router.navigate(path);
