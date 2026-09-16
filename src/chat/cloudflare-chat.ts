@@ -18,6 +18,7 @@ export function useCloudflareChat({ conversationId, onBeforeSend }: {
   const wallet = useOptionalWallet();
   const paying = useRef(false);
   const [isPaying, setIsPaying] = useState(false);
+  const [paymentProgress, setPaymentProgress] = useState<{ toolCallId: string; label: string } | null>(null);
   const chat = useAgentChat({
     agent,
     resume: true,
@@ -52,6 +53,7 @@ export function useCloudflareChat({ conversationId, onBeforeSend }: {
           request,
           attemptId: toolCall.toolCallId,
           getSigner: wallet.getPaymentSigner,
+          onProgress: (label) => setPaymentProgress({ toolCallId: toolCall.toolCallId, label }),
         });
         addToolOutput({
           toolCallId: toolCall.toolCallId,
@@ -70,6 +72,7 @@ export function useCloudflareChat({ conversationId, onBeforeSend }: {
       } finally {
         paying.current = false;
         setIsPaying(false);
+        setPaymentProgress(null);
       }
     },
   });
@@ -85,6 +88,7 @@ export function useCloudflareChat({ conversationId, onBeforeSend }: {
       error: chat.error ?? chat.connectionError ?? agent.connectionError,
       isRecovering: chat.isRecovering,
       isStreaming: chat.isStreaming || isPaying,
+      paymentProgress,
       messages: chat.messages,
       sendMessage,
       status: chat.status,

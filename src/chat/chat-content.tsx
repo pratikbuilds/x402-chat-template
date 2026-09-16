@@ -26,7 +26,8 @@ export function ChatContent({ chat }: { chat: ChatAdapter }) {
 
   const renderMessage = useCallback(
     ({ item }: { item: ChatMessage }) => {
-      if (item.x402) return <X402Call result={item.x402} />;
+      if (item.toolCall) return <X402Call state={item.toolCall} />;
+      if (item.x402) return <X402Call state={{ kind: "completed", result: item.x402 }} />;
       if (item.role === "user") {
         return <Message from="user">{item.content}</Message>;
       }

@@ -3,13 +3,16 @@ import type { PrivyKitSigner } from "./privy-kit-signer";
 import { readSettledPayment } from "./settled-payment";
 import { savePaymentReceipt } from "./settlement-receipts";
 import { X402PaymentRequestSchema } from "./x402-request";
+import { refreshBalanceAfterPayment } from "@/wallet/balance-store";
 
 export async function payForResource(input: {
   request: unknown;
   attemptId: string;
   getSigner: () => Promise<PrivyKitSigner>;
+  onProgress?: (label: string) => void;
 }) {
   const request = X402PaymentRequestSchema.parse(input.request);
+  input.onProgress?.("Preparing in-app wallet…");
   const signer = await input.getSigner();
   const client = await createPaidFetch({
     rpcUrl: getSolanaRpcUrl(),
@@ -24,9 +27,16 @@ export async function payForResource(input: {
       body: request.body === undefined ? undefined : JSON.stringify(request.body),
     }
     : undefined;
+  input.onProgress?.("Sending x402 request…");
   const result = await readSettledPayment({
-    pay: () => client.fetch(request.resourceUrl, requestInit, "x402"),
+    pay: async () => {
+      const response = await client.fetch(request.resourceUrl, requestInit, "x402");
+      input.onProgress?.("Checking payment receipt…");
+      return response;
+    },
   });
+
+  refreshBalanceAfterPayment(signer.address);
 
   await savePaymentReceipt(input.attemptId, {
     url: request.resourceUrl,

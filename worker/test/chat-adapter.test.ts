@@ -12,6 +12,24 @@ import {
 } from "../../src/chat/cloudflare-connection";
 
 describe("Cloudflare chat adapter", () => {
+  it("keeps the same tool row through progress and completion before the answer", () => {
+    const input = { resourceUrl: "https://provider.example/quote", reason: "Quote" };
+    const output = { url: input.resourceUrl, body: "quote", signature: "receipt" };
+    const pending = projectChatMessages([{
+      id: "assistant", role: "assistant", parts: [{ type: "tool-request_x402_payment", toolCallId: "pay", state: "input-available", input }],
+    }], true, { toolCallId: "pay", label: "Preparing in-app wallet…" });
+    expect(pending).toEqual([{ id: "assistant-pay", role: "assistant", content: "", toolCall: { kind: "running", label: "Preparing in-app wallet…" } }]);
+    const completed = projectChatMessages([{
+      id: "assistant", role: "assistant", parts: [
+        { type: "tool-request_x402_payment", toolCallId: "pay", state: "output-available", input, output },
+        { type: "text", text: "Here is your quote." },
+      ],
+    }], false);
+    expect(completed).toEqual([
+      { id: "assistant-pay", role: "assistant", content: "", toolCall: { kind: "completed", result: output } },
+      { id: "assistant", role: "assistant", content: "Here is your quote." },
+    ]);
+  });
   it("starts with an empty projected history", () => {
     expect(projectChatMessages([], false)).toEqual([]);
   });
@@ -63,9 +81,10 @@ describe("Cloudflare chat adapter", () => {
 
     expect(projectChatMessages(messages, false)).toEqual([
       {
-        id: "assistant-payment-error-payment-call-error",
+        id: "assistant-payment-error-payment-call",
         role: "assistant",
-        content: "x402 call failed: Payment endpoint returned HTTP 502 without settlement confirmation.",
+        content: "",
+        toolCall: { kind: "error", message: "Payment endpoint returned HTTP 502 without settlement confirmation." },
       },
     ]);
   });
