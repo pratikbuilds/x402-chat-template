@@ -1,9 +1,8 @@
 import { getWalletStatusText, useWallet } from "@/wallet/wallet-provider";
 import { WalletBalanceDisplay } from "@/wallet/wallet-balance-display";
-import { payForResource } from "@/payments/pay-for-resource";
 import * as Clipboard from "expo-clipboard";
 import { Check, Copy, ShieldCheck, WalletCards } from "lucide-react-native";
-import { useRef, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 
 type WalletScreenAction = Readonly<{
@@ -46,6 +45,7 @@ function getExternalAction(
       return null;
     case "ready-to-sign-in":
     case "ready-to-create":
+    case "ready-to-initialize":
     case "unavailable":
     case "loading":
     case "working":
@@ -62,6 +62,8 @@ function getInAppAction(
   wallet: ReturnType<typeof useWallet>,
 ): WalletScreenAction | null {
   switch (wallet.state.kind) {
+    case "ready-to-initialize":
+      return { label: "Initialize in-app wallet", onPress: wallet.initializeEmbeddedWallet };
     case "ready-to-sign-in":
       return { label: "Sign in with wallet", onPress: wallet.signInWithSolana };
     case "ready-to-create":
@@ -70,6 +72,9 @@ function getInAppAction(
         onPress: wallet.createEmbeddedWallet,
       };
     case "error":
+      if (wallet.state.action === "initialize") {
+        return { label: "Initialize in-app wallet", onPress: wallet.initializeEmbeddedWallet };
+      }
       if (wallet.state.action === "sign-in") {
         return {
           label: "Try signing in again",
@@ -134,33 +139,15 @@ function WalletActionButton({
 
 export default function WalletPaymentsScreen() {
   const wallet = useWallet();
-  const calling = useRef(false);
-  const [result, setResult] = useState("");
-  const [isCalling, setIsCalling] = useState(false);
-  const callEndpoint = async () => {
-    if (calling.current || !wallet.getPaymentSigner) return;
-    calling.current = true;
-    setIsCalling(true);
-    setResult("");
-    try {
-      const response = await payForResource({
-        request: { resourceUrl: "https://mcp.blocksize.info/v1/bidask/BTC-USD", reason: "Get BTC-USD bid and ask" },
-        attemptId: `direct-${Date.now()}`,
-        getSigner: wallet.getPaymentSigner,
-      });
-      setResult(`Paid successfully\n${response.signature}\n\n${response.paidBody}`);
-    } catch (error) {
-      setResult(error instanceof Error ? error.message : "Call failed.");
-    } finally {
-      calling.current = false;
-      setIsCalling(false);
-    }
-  };
   const [copiedAddress, setCopiedAddress] = useState<string | null>(null);
   const externalAction = getExternalAction(wallet);
   const inAppAction = getInAppAction(wallet);
   const isWorking = wallet.state.kind === "working";
-  const inAppStatus = wallet.embeddedWalletAddress
+  const inAppStatus = wallet.state.kind === "error" && wallet.state.action === "initialize"
+    ? "Needs initialization"
+    : wallet.state.kind === "ready-to-initialize"
+      ? "Needs initialization"
+      : wallet.embeddedWalletAddress
     ? "Connected"
     : wallet.state.kind === "loading"
       ? "Loading"
@@ -179,7 +166,7 @@ export default function WalletPaymentsScreen() {
       : null;
   const inAppError =
     wallet.state.kind === "error" &&
-    (wallet.state.action === "sign-in" || wallet.state.action === "create")
+    (wallet.state.action === "sign-in" || wallet.state.action === "create" || wallet.state.action === "initialize")
       ? getWalletStatusText(wallet.state)
       : null;
   const statusMessage =
@@ -224,12 +211,6 @@ export default function WalletPaymentsScreen() {
             Create this wallet to make x402 calls.
           </Text>
         )}
-        {wallet.getPaymentSigner ? (
-          <View className="gap-2">
-            <WalletActionButton action={{ label: isCalling ? "Calling…" : "Get BTC quote · 0.002 USDC", onPress: callEndpoint }} disabled={isCalling} />
-            {result ? <Text selectable className="text-[13px] leading-5 text-foreground">{result}</Text> : null}
-          </View>
-        ) : null}
         {inAppAction ? (
           <WalletActionButton action={inAppAction} disabled={isWorking} />
         ) : null}

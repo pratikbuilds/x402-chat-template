@@ -1,55 +1,31 @@
 import { useIsFocused } from "expo-router/react-navigation";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Pressable, Text, View } from "react-native";
 
-import { getWalletBalances } from "./wallet-balances";
-
-type BalanceState =
-  | { kind: "loading" }
-  | { kind: "error" }
-  | { kind: "ready"; balances: Awaited<ReturnType<typeof getWalletBalances>> };
+import { refreshWalletBalance, useWalletBalance } from "./balance-store";
 
 export function WalletBalanceDisplay({ address }: { address: string }) {
-  const [state, setState] = useState<BalanceState>({ kind: "loading" });
-  const [refresh, setRefresh] = useState(0);
+  const { balances, refreshing, error } = useWalletBalance(address);
   const isFocused = useIsFocused();
 
   useEffect(() => {
-    if (!isFocused) return;
-    let active = true;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
-    void getWalletBalances(address, controller.signal)
-      .then(
-        (balances) => {
-          if (active) setState({ kind: "ready", balances });
-        },
-        () => {
-          if (active) setState({ kind: "error" });
-        },
-      )
-      .finally(() => clearTimeout(timeout));
-    return () => {
-      active = false;
-      clearTimeout(timeout);
-      controller.abort();
-    };
-  }, [address, isFocused, refresh]);
+    if (isFocused) void refreshWalletBalance(address);
+  }, [address, isFocused]);
 
   return (
     <View className="flex-row items-center gap-3">
       <Text className="text-[12px] font-medium text-muted-foreground">
-        Mainnet
+        Mainnet{error && balances ? " · Update failed" : ""}
       </Text>
-      {state.kind === "ready" ? (
+      {balances ? (
         <View className="flex-1 flex-row gap-3">
           <Balance
-            amount={state.balances.usdc}
+            amount={balances.usdc}
             maximumFractionDigits={6}
             symbol="USDC"
           />
           <Balance
-            amount={state.balances.sol}
+            amount={balances.sol}
             maximumFractionDigits={9}
             symbol="SOL"
           />
@@ -59,7 +35,7 @@ export function WalletBalanceDisplay({ address }: { address: string }) {
           accessibilityLiveRegion="polite"
           className="flex-1 text-[12px] text-muted-foreground"
         >
-          {state.kind === "loading"
+          {!error
             ? "Loading balances…"
             : "Couldn’t load balances. Tap Refresh to retry."}
         </Text>
@@ -67,14 +43,11 @@ export function WalletBalanceDisplay({ address }: { address: string }) {
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Refresh wallet balances"
-        disabled={state.kind === "loading"}
-        onPress={() => {
-          setState({ kind: "loading" });
-          setRefresh((value) => value + 1);
-        }}
+        disabled={refreshing}
+        onPress={() => void refreshWalletBalance(address)}
         className="rounded-md px-2 py-1 active:bg-background disabled:opacity-50"
       >
-        <Text className="text-[12px] font-medium text-foreground">Refresh</Text>
+        <Text className="text-[12px] font-medium text-foreground">{refreshing ? "Refreshing…" : "Refresh"}</Text>
       </Pressable>
     </View>
   );

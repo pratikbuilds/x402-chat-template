@@ -3,6 +3,7 @@ import {
   isConnected,
   isCreating,
   isNotCreated,
+  needsRecovery,
   PrivyProvider,
   useEmbeddedSolanaWallet,
   useLoginWithSiws,
@@ -19,7 +20,9 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -41,7 +44,7 @@ const SOLANA_MAINNET = createSolanaMainnet(
     "https://api.mainnet-beta.solana.com",
 );
 
-type WalletAction = "connect" | "sign-in" | "create" | "disconnect";
+type WalletAction = "connect" | "sign-in" | "create" | "initialize" | "disconnect";
 
 export type WalletState =
   | { kind: "unavailable"; message: string }
@@ -49,6 +52,7 @@ export type WalletState =
   | { kind: "external-wallet-disconnected" }
   | { kind: "ready-to-sign-in" }
   | { kind: "ready-to-create" }
+  | { kind: "ready-to-initialize" }
   | { kind: "working"; action: WalletAction }
   | { kind: "error"; action: WalletAction; message: string }
   | { kind: "ready" };
@@ -65,6 +69,8 @@ export function getWalletStatusText(state: WalletState) {
       return "Approve the Sign-In With Solana message in your wallet.";
     case "ready-to-create":
       return "Your in-app wallet is ready to create.";
+    case "ready-to-initialize":
+      return "Initialize your existing in-app wallet to use it on this device.";
     case "working":
       return "Working…";
     case "error":
@@ -86,6 +92,7 @@ type WalletContextValue = Readonly<{
   state: WalletState;
   connectExternalWallet: () => Promise<void>;
   createEmbeddedWallet: () => Promise<void>;
+  initializeEmbeddedWallet: () => Promise<void>;
   disconnectWallets: () => Promise<void>;
   signInWithSolana: () => Promise<void>;
 }>;
@@ -101,6 +108,7 @@ const unavailableWalletValue = (message: string) =>
     state: { kind: "unavailable", message },
     connectExternalWallet: doNothing,
     createEmbeddedWallet: doNothing,
+    initializeEmbeddedWallet: doNothing,
     disconnectWallets: doNothing,
     signInWithSolana: doNothing,
   }) satisfies WalletContextValue;
@@ -123,9 +131,7 @@ function WalletConnectionProvider({ children }: { children: ReactNode }) {
   } | null>(null);
 
   const externalWalletAddress = account?.address.toString() ?? null;
-  const embeddedWallet = isConnected(embeddedSolanaWallet)
-    ? embeddedSolanaWallet.wallets[0]
-    : null;
+  const embeddedWallet = embeddedSolanaWallet.wallets?.[0] ?? null;
   const embeddedWalletAddress = embeddedWallet?.address ?? null;
 
   const runAction = useCallback(
@@ -172,11 +178,35 @@ function WalletConnectionProvider({ children }: { children: ReactNode }) {
 
   const createEmbeddedWallet = useCallback(async () => {
     await runAction("create", async () => {
-      if (isNotCreated(embeddedSolanaWallet)) {
+      if (embeddedSolanaWallet.create && !embeddedWallet) {
         await embeddedSolanaWallet.create();
       }
     });
+  }, [embeddedSolanaWallet, embeddedWallet, runAction]);
+
+  const initializeEmbeddedWallet = useCallback(async () => {
+    await runAction("initialize", async () => {
+      if (!embeddedSolanaWallet.recover) {
+        throw new Error("Sign in before initializing your in-app wallet.");
+      }
+      await embeddedSolanaWallet.recover();
+    });
   }, [embeddedSolanaWallet, runAction]);
+
+  const retriedProxyInitialization = useRef(false);
+  useEffect(() => {
+    if (!hasError(embeddedSolanaWallet) ||
+        embeddedSolanaWallet.error !== "Embedded wallet proxy not initialized" ||
+        !embeddedWallet || retriedProxyInitialization.current) return;
+
+    // Privy's shared loaded flag can outlive its provider during Fast Refresh.
+    // Give the new WebView time to attach, then reconnect the existing wallet once.
+    const timer = setTimeout(() => {
+      retriedProxyInitialization.current = true;
+      void initializeEmbeddedWallet();
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [embeddedSolanaWallet, embeddedWallet, initializeEmbeddedWallet]);
 
   const disconnectWallets = useCallback(
     async () =>
@@ -209,14 +239,17 @@ function WalletConnectionProvider({ children }: { children: ReactNode }) {
     if (isCreating(embeddedSolanaWallet)) {
       return { kind: "working", action: "create" };
     }
-    if (embeddedWallet) {
+    if (isConnected(embeddedSolanaWallet) && embeddedWallet) {
       return { kind: "ready" };
     }
     if (isNotCreated(embeddedSolanaWallet)) {
       return { kind: "ready-to-create" };
     }
     if (hasError(embeddedSolanaWallet)) {
-      return { kind: "unavailable", message: embeddedSolanaWallet.error };
+      return { kind: "error", action: embeddedWallet ? "initialize" : "create", message: embeddedSolanaWallet.error };
+    }
+    if (needsRecovery(embeddedSolanaWallet)) {
+      return { kind: "ready-to-initialize" };
     }
     return { kind: "loading" };
   }, [
@@ -258,12 +291,14 @@ function WalletConnectionProvider({ children }: { children: ReactNode }) {
       state,
       connectExternalWallet,
       createEmbeddedWallet,
+      initializeEmbeddedWallet,
       disconnectWallets,
       signInWithSolana,
     }),
     [
       connectExternalWallet,
       createEmbeddedWallet,
+      initializeEmbeddedWallet,
       disconnectWallets,
       embeddedWalletAddress,
       externalWalletAddress,

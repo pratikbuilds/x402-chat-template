@@ -10,6 +10,7 @@ import {
 
 import { useChatContext } from "./chat-context";
 import { useConversationContext } from "./conversation";
+import { WalletBalanceChip } from "@/wallet/wallet-balance-chip";
 
 /**
  * Root container for the message composer matching Vercel chatbot design.
@@ -39,6 +40,7 @@ export function PromptInput({ children }: { children: ReactNode }) {
       onLayout={onPromptInputLayout}
       className="sticky bottom-0 z-10 mx-auto flex w-full max-w-4xl gap-2 bg-background px-2 pb-3 md:px-4 md:pb-4"
     >
+      <WalletBalanceChip />
       <View className="flex w-full flex-col rounded-2xl border border-border/30 bg-card/70 shadow-composer transition-shadow duration-300 focus-within:shadow-composer-focus">
         {body}
       </View>

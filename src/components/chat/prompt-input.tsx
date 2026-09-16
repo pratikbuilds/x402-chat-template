@@ -12,6 +12,7 @@ import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { cn } from "@/utils/tailwind";
 import { useChatContext } from "./chat-context";
 import { useConversationContext } from "./conversation";
+import { WalletBalanceChip } from "@/wallet/wallet-balance-chip";
 
 const AnimatedGlassContainer = Animated.createAnimatedComponent(GlassContainer);
 const ComposerContainer = process.env.EXPO_OS === "android" ? View : AnimatedGlassContainer;
@@ -32,6 +33,7 @@ export function PromptInput({ children }: { children: ReactNode }) {
       className="bg-background"
     >
       {error && <PromptInputError message={error.message} />}
+      <WalletBalanceChip />
       <ComposerContainer
         style={{
           flexDirection: "row",
