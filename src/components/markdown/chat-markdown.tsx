@@ -15,16 +15,6 @@ const VAR_NAMES = [
   "--color-blue-400",
 ] as const;
 
-/**
- * Convert single newlines to hard breaks (two trailing spaces) so they render
- * the same way they appear during streaming. Skips fenced code blocks.
- */
-function preserveNewlines(md: string): string {
-  return md.replace(/(```[\s\S]*?```)|(\n)/g, (match, codeBlock) =>
-    codeBlock ? match : "  \n",
-  );
-}
-
 export function ChatMarkdown({ children }: { children: string }) {
   const [text, text2, border, bg2, bg3, fill3, link] = useCSSVariable(
     VAR_NAMES as unknown as string[],
@@ -106,7 +96,7 @@ export function ChatMarkdown({ children }: { children: string }) {
           </View>
         ),
       }}
-      markdown={preserveNewlines(children)}
+      markdown={children}
     />
   );
 }
