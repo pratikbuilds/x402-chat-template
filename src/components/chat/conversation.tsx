@@ -10,7 +10,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { FlatList, LayoutChangeEvent, Text, View } from "react-native";
+import { LayoutChangeEvent, Text, View } from "react-native";
 import { KeyboardAvoidingView, useKeyboardHandler } from "react-native-keyboard-controller";
 import Animated, {
   runOnJS,
@@ -68,38 +68,74 @@ export function Conversation(props: ConversationProps) {
 }
 
 function AndroidConversation({ renderMessage, emptyState, children }: ConversationProps) {
-  const { messages, streamingStore } = useChatContext();
-  const list = useRef<FlatList<ChatMessage>>(null);
+  const { messages } = useChatContext();
+  const list = useRef<LegendListRef>(null);
   const atBottom = useRef(true);
-  const lastScrolledMessage = useRef({ id: "", text: "" });
-  const lastMessage = messages.at(-1);
-  const onContentSizeChange = useCallback(() => {
-    const id = lastMessage?.id ?? "";
-    const text = lastMessage?.content || streamingStore.get();
-    const previous = lastScrolledMessage.current;
-    if (previous.id === id && previous.text === text) return;
-    lastScrolledMessage.current = { id, text };
-    if (atBottom.current) list.current?.scrollToEnd({ animated: false });
-  }, [lastMessage, streamingStore]);
+  const scrollScheduled = useRef(false);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const [composerHeight, setComposerHeight] = useState(68);
   const insets = useSafeAreaInsets();
-  const scrollToBottom = useCallback(() => list.current?.scrollToEnd({ animated: true }), []);
+  const scrollToBottom = useCallback(() => {
+    list.current?.scrollToEnd({ animated: true });
+  }, []);
+  const onPromptInputLayout = useCallback((event: LayoutChangeEvent) => {
+    setComposerHeight(event.nativeEvent.layout.height);
+  }, []);
+  const onContentSizeChange = useCallback(() => {
+    if (!atBottom.current || scrollScheduled.current) return;
+
+    scrollScheduled.current = true;
+    requestAnimationFrame(() => {
+      scrollScheduled.current = false;
+      if (atBottom.current) list.current?.scrollToEnd({ animated: true });
+    });
+  }, []);
+
   return (
-    <ConversationCtx value={{ scrollToBottom, promptInputStyle: {}, onPromptInputLayout: () => {}, scrollButtonStyle: { display: "none" } }}>
+    <ConversationCtx
+      value={{
+        scrollToBottom,
+        promptInputStyle: {},
+        onPromptInputLayout,
+        scrollButtonStyle: {
+          display: isAtBottom ? "none" : "flex",
+          bottom: composerHeight + insets.bottom + 12,
+        },
+      }}
+    >
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }} keyboardVerticalOffset={insets.top + 56}>
-        <FlatList
+        <LegendList
           ref={list}
           data={messages}
           renderItem={renderMessage}
           keyExtractor={(item) => item.id}
           style={{ flex: 1 }}
-          contentContainerStyle={{ padding: 16, flexGrow: 1 }}
+          contentContainerStyle={{
+            padding: 16,
+            paddingBottom: composerHeight + insets.bottom + 16,
+            flexGrow: 1,
+          }}
+          estimatedItemSize={80}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
           onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
-            atBottom.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 80;
+            const distanceFromBottom =
+              contentSize.height - contentOffset.y - layoutMeasurement.height;
+            const nextAtBottom =
+              distanceFromBottom <= Math.max(48, layoutMeasurement.height * 0.1);
+            atBottom.current = nextAtBottom;
+            setIsAtBottom((previous) =>
+              previous === nextAtBottom ? previous : nextAtBottom,
+            );
           }}
           scrollEventThrottle={16}
-          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+          maintainVisibleContentPosition
+          maintainScrollAtEnd={{
+            onDataChange: true,
+            onItemLayout: true,
+            onLayout: true,
+          }}
+          maintainScrollAtEndThreshold={0.1}
           onContentSizeChange={onContentSizeChange}
           ListEmptyComponent={emptyState}
         />
