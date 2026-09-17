@@ -2,7 +2,7 @@ import { createPaidFetch, getSolanaRpcUrl } from "./paid-fetch";
 import type { PrivyKitSigner } from "./privy-kit-signer";
 import { readSettledPayment } from "./settled-payment";
 import { savePaymentReceipt } from "./settlement-receipts";
-import { X402PaymentRequestSchema } from "./x402-request";
+import { parseX402PaymentRequest } from "./x402-request";
 import { refreshBalanceAfterPayment } from "@/wallet/balance-store";
 
 export async function payForResource(input: {
@@ -11,7 +11,8 @@ export async function payForResource(input: {
   getSigner: () => Promise<PrivyKitSigner>;
   onProgress?: (label: string) => void;
 }) {
-  const request = X402PaymentRequestSchema.parse(input.request);
+  const request = parseX402PaymentRequest(input.request);
+  if (!request) throw new Error("The paid request does not match this endpoint's published contract.");
   input.onProgress?.("Preparing in-app wallet…");
   const signer = await input.getSigner();
   const client = await createPaidFetch({

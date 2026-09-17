@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isValidCatalogRequest } from "./x402-catalog";
 
 export const SOLANA_MAINNET_USDC_MINT =
   "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
@@ -22,5 +23,6 @@ export type X402PaymentRequest = z.infer<typeof X402PaymentRequestSchema>;
 
 export function parseX402PaymentRequest(input: unknown) {
   const result = X402PaymentRequestSchema.safeParse(input);
-  return result.success ? result.data : null;
+  if (!result.success || !isValidCatalogRequest(result.data)) return null;
+  return result.data;
 }

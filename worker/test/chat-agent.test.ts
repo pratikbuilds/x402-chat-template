@@ -73,6 +73,7 @@ describe("streamChatTurn", () => {
     await response.text();
 
     expect(toolNames).toContain("request_x402_payment");
+    expect(toolNames).not.toContain("probe_x402_endpoint");
   });
 
   it("emits an x402 tool request for client-side wallet handling", async () => {
