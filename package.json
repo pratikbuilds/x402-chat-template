@@ -15,6 +15,7 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.77",
     "@ai-sdk/react": "^3.0.176",
+    "@cfworker/json-schema": "^4.1.1",
     "@cloudflare/ai-chat": "^0.11.0",
     "@ethersproject/shims": "^5.8.0",
     "@expo/ui": "~56.0.18",

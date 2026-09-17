@@ -73,7 +73,8 @@ describe("streamChatTurn", () => {
     await response.text();
 
     expect(toolNames).toContain("request_x402_payment");
-    expect(toolNames).not.toContain("probe_x402_endpoint");
+    expect(toolNames).toContain("search_x402_catalog");
+    expect(toolNames).toContain("get_x402_catalog_operation");
   });
 
   it("emits an x402 tool request for client-side wallet handling", async () => {
@@ -87,7 +88,9 @@ describe("streamChatTurn", () => {
               toolCallId: "x402-call",
               toolName: "request_x402_payment",
               input: JSON.stringify({
+                providerFqn: "example/provider",
                 resourceUrl: "https://provider.example/trending",
+                method: "GET",
                 reason: "Get trending data",
               }),
             },

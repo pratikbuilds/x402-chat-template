@@ -8,14 +8,14 @@ You send a message. The agent lives on a Cloudflare Worker (a Durable Object). I
 
 ## What it does
 
-When you ask for something behind a paid URL, the agent calls `request_x402_payment`. The app:
+When you ask for paid data, the agent searches the Pay catalog, reads the selected operation's request contract, and calls `request_x402_payment`. The app validates the URL, method, and JSON body against that catalog operation before it:
 
 1. Signs the payment with the Privy in-app Solana wallet
 2. Lets Pay Kit handle the HTTP 402, settle USDC on Solana mainnet, and retry the request
 3. Sends the paid body and Solana transaction signature back to the agent
 4. Shows the call as a collapsed **x402** row in chat
 
-There is no approval screen. If the in-app wallet is funded and ready, the payment goes through. Try `Get a paid BTC-USD bid/ask snapshot` or `Call https://your-x402-endpoint`. Endpoints must be HTTPS. GET is the default; POST is only used when the endpoint needs a JSON body.
+There is no approval screen. If the in-app wallet is funded and ready, the payment goes through. Try `Get a paid BTC-USD bid/ask snapshot`. Endpoints must be HTTPS operations published in the Pay catalog. The agent supplies the catalog method and any required JSON body.
 
 ## Wallets
 
