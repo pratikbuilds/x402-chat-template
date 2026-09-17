@@ -70,11 +70,35 @@ export function projectChatMessages(
       }
       return [];
     });
+    const activities = message.parts.flatMap((part): ChatMessage[] => {
+      if (part.type === "tool-search_x402_catalog") {
+        return [{
+          id: `${message.id}-${part.toolCallId}`,
+          role: "assistant",
+          content: "",
+          activity: {
+            label: part.state === "output-available" ? "Pay catalog checked" : "Checking Pay catalog…",
+            status: part.state === "output-available" ? "completed" : "running",
+          },
+        }];
+      }
+      if (part.type === "tool-get_x402_catalog_operation") {
+        return [{
+          id: `${message.id}-${part.toolCallId}`,
+          role: "assistant",
+          content: "",
+          activity: {
+            label: part.state === "output-available" ? "API request contract read" : "Reading API request contract…",
+            status: part.state === "output-available" ? "completed" : "running",
+          },
+        }];
+      }
+      return [];
+    });
     const text = getTextFromParts(message.parts);
-    if (!text && (!isActiveAssistantMessage || results.length > 0)) return results;
+    if (!text && (!isActiveAssistantMessage || results.length > 0 || activities.length > 0)) return [...activities, ...results];
 
     return [
-      ...(message.role === "assistant" ? results : []),
       {
         id: message.id,
         role: message.role,
@@ -82,6 +106,7 @@ export function projectChatMessages(
           ? ""
           : text,
       },
+      ...(message.role === "assistant" ? [...activities, ...results] : []),
       ...(message.role === "user" ? results : []),
     ];
   });

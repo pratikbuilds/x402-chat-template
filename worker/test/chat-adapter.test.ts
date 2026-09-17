@@ -12,7 +12,7 @@ import {
 } from "../../src/chat/cloudflare-connection";
 
 describe("Cloudflare chat adapter", () => {
-  it("keeps the same tool row through progress and completion before the answer", () => {
+  it("keeps the same tool row through progress and completion after the answer", () => {
     const input = { resourceUrl: "https://provider.example/quote", reason: "Quote" };
     const output = { url: input.resourceUrl, body: "quote", signature: "receipt" };
     const pending = projectChatMessages([{
@@ -26,9 +26,30 @@ describe("Cloudflare chat adapter", () => {
       ],
     }], false);
     expect(completed).toEqual([
-      { id: "assistant-pay", role: "assistant", content: "", toolCall: { kind: "completed", result: output } },
       { id: "assistant", role: "assistant", content: "Here is your quote." },
+      { id: "assistant-pay", role: "assistant", content: "", toolCall: { kind: "completed", result: output } },
     ]);
+  });
+
+  it("shows catalog activity while the agent prepares a paid request", () => {
+    const messages = projectChatMessages([{
+      id: "assistant",
+      role: "assistant",
+      parts: [{
+        type: "tool-search_x402_catalog",
+        toolCallId: "catalog",
+        toolName: "search_x402_catalog",
+        state: "input-available",
+        input: { query: "top tokens" },
+      }],
+    }], true);
+
+    expect(messages).toEqual([{
+      id: "assistant-catalog",
+      role: "assistant",
+      content: "",
+      activity: { label: "Checking Pay catalog…", status: "running" },
+    }]);
   });
   it("starts with an empty projected history", () => {
     expect(projectChatMessages([], false)).toEqual([]);

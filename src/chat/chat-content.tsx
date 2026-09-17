@@ -1,4 +1,5 @@
 import { X402Call } from "@/components/chat/x402-call";
+import { AgentActivity } from "@/components/chat/agent-activity";
 import type { ChatAdapter } from "@/chat/chat-adapter";
 import {
   ChatProvider,
@@ -28,6 +29,7 @@ export function ChatContent({ chat }: { chat: ChatAdapter }) {
     ({ item }: { item: ChatMessage }) => {
       if (item.toolCall) return <X402Call state={item.toolCall} />;
       if (item.x402) return <X402Call state={{ kind: "completed", result: item.x402 }} />;
+      if (item.activity) return <AgentActivity state={item.activity} />;
       if (item.role === "user") {
         return <Message from="user">{item.content}</Message>;
       }
